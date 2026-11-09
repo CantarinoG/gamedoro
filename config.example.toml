@@ -1,0 +1,15 @@
+# Copy to ~/.config/gamedoro/config.toml
+# Command-line flags override these. Edits are picked up while gamedoro runs
+# and apply from the next cycle (the overlay setting needs a restart).
+
+# Minutes of play allowed per cycle.
+play = 50
+
+# Minutes your games stay frozen afterwards.
+block = 10
+
+# Extra minutes added to the first cycle after start, to cover game loading.
+first_bonus = 10
+
+# Show the countdown overlay and wait for Enter. false = blocks just end.
+overlay = true
