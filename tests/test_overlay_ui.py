@@ -21,7 +21,7 @@ class TextsTest(unittest.TestCase):
     def test_countdown_has_no_enter_prompt(self):
         title, clk, hint = texts(90)
         self.assertEqual(clk, "01:30")
-        self.assertNotIn("Enter", hint)
+        self.assertEqual(hint, "")
 
     def test_finished_prompts_for_enter(self):
         title, clk, hint = texts(0)

@@ -34,7 +34,7 @@ def clock(seconds: float) -> str:
 def texts(remaining: float) -> tuple[str, str, str]:
     """(title, clock, hint) for the given time left."""
     if remaining > 0:
-        return "Time for a break", clock(remaining), "Go do something productive."
+        return "Time for a break", clock(remaining), ""
     return "Break's over", clock(0), "Press Enter to resume your game."
 
 
@@ -93,7 +93,7 @@ def run(until: float, confirm_file: str) -> int:
         win.add(box)
         win.connect("key-press-event", on_key)
         win.show_all()
-        labels.append(trio)
+        labels.append(trio)  # tick() shows/hides the hint as needed
 
     def on_key(_win, event):
         if until - time.time() <= 0 and event.keyval in (
@@ -111,6 +111,7 @@ def run(until: float, confirm_file: str) -> int:
             t.set_text(title)
             c.set_text(clk)
             h.set_text(hint)
+            h.set_visible(bool(hint))
             for lbl in (t, h):
                 ctx = lbl.get_style_context()
                 (ctx.add_class if done else ctx.remove_class)("ready")
