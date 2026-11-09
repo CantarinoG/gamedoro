@@ -1,5 +1,6 @@
 import unittest
 
+from gamedoro.config import Settings
 from gamedoro.cycle import Cycle, Phase
 from gamedoro.daemon import FAST_INTERVAL, OVERLAY_MARGIN, Daemon
 
@@ -198,6 +199,57 @@ class OverlayTest(unittest.TestCase):
         h, o = self.blocked()
         h.daemon.release()
         self.assertEqual(o.hidden, 1)
+
+
+class FakeWatcher:
+    def __init__(self):
+        self.pending = (None, None)
+
+    def poll(self):
+        result, self.pending = self.pending, (None, None)
+        return result
+
+
+class ReloadTest(unittest.TestCase):
+    def make(self):
+        h = Harness(play=600, block=300)
+        h.daemon._watcher = FakeWatcher()
+        return h
+
+    def test_new_lengths_apply_to_the_next_cycle_only(self):
+        h = self.make()
+        h.daemon.step(5)
+        h.daemon._watcher.pending = (Settings(play=20, block=3), None)
+        h.daemon.reload_config()
+        self.assertEqual(h.daemon.cycle.play_seconds, 1200)
+        self.assertEqual(h.daemon.cycle.block_seconds, 180)
+        self.assertEqual(h.daemon.cycle.remaining, 595)  # running budget untouched
+        self.assertIn("gamedoro: settings reloaded", h.notes)
+
+    def test_a_block_in_progress_cannot_be_shortened(self):
+        h = Harness(play=1, block=300)
+        h.daemon._watcher = FakeWatcher()
+        h.daemon.step(1)  # BLOCKED, 300s
+        h.daemon._watcher.pending = (Settings(play=1, block=0.1), None)
+        h.daemon.reload_config()
+        self.assertEqual(h.daemon.cycle.remaining, 300)
+        h.daemon.step(5)
+        self.assertEqual(h.daemon.cycle.phase, Phase.BLOCKED)
+
+    def test_bad_config_keeps_old_settings_and_tells_you(self):
+        h = self.make()
+        h.daemon._watcher.pending = (None, "config.toml: play must be a number")
+        h.daemon.reload_config()
+        self.assertEqual(h.daemon.cycle.play_seconds, 600)
+        self.assertIn("gamedoro: bad config", h.notes)
+
+    def test_no_change_is_silent(self):
+        h = self.make()
+        h.daemon.reload_config()
+        self.assertEqual(h.notes, [])
+
+    def test_works_without_a_watcher(self):
+        Harness().daemon.reload_config()
 
 
 if __name__ == "__main__":

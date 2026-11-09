@@ -13,6 +13,7 @@ from .cycle import Cycle, Phase
 STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 WARN_AT = 60.0  # seconds of play left when the warning goes out
 SAVE_EVERY = 10.0  # seconds between state saves
+CONFIG_EVERY = 5.0  # seconds between config file checks
 # The overlay's clock runs a little past the daemon's, so that when it reads
 # 00:00 the daemon is already waiting for Enter.
 OVERLAY_MARGIN = 1.5
@@ -31,17 +32,20 @@ class Daemon:
     def __init__(self, cycle: Cycle, find=games.find_game_pids,
                  freeze=freezer.freeze, thaw=freezer.thaw, notify=notify,
                  state_path: Path | None = None, overlay=None,
-                 clock=time.time, locate=None):
+                 clock=time.time, locate=None, watcher=None):
         """`overlay` is optional; without one, blocks end by themselves.
 
         `locate(pids, app_ids)` returns the screens currently showing the game
         (an empty set if it's not on screen), or None if that can't be known,
         in which case the overlay covers every screen.
+
+        `watcher` (a config.Watcher) is polled to pick up edited settings.
         """
         self.cycle = cycle
         self.state_path = state_path
         self._find, self._freeze, self._thaw, self._notify = find, freeze, thaw, notify
         self._overlay, self._clock, self._locate = overlay, clock, locate
+        self._watcher = watcher
         self._frozen: set[int] = set()
         self._warned = False
         self._warned_overlay = False
@@ -114,6 +118,22 @@ class Daemon:
         waiting = self.cycle.phase is not Phase.PLAYING and self._overlay is not None
         return FAST_INTERVAL if waiting else slow
 
+    def reload_config(self) -> None:
+        """Apply edited settings. They take effect from the next cycle: a block
+        or play budget already running keeps the length it started with, so
+        editing the file can't shorten a block you're in."""
+        if self._watcher is None:
+            return
+        new, error = self._watcher.poll()
+        if error:
+            self._notify("gamedoro: bad config", f"{error}\nKeeping the old settings.")
+        elif new is not None:
+            self.cycle.play_seconds = new.play * 60
+            self.cycle.block_seconds = new.block * 60
+            self._notify("gamedoro: settings reloaded",
+                         f"play {new.play:g} min, block {new.block:g} min "
+                         "(from the next cycle)")
+
     def resume(self) -> None:
         """End a finished block: thaw the games and start a new play cycle."""
         if self.cycle.resume():
@@ -142,7 +162,7 @@ class Daemon:
         if self.cycle.phase is Phase.PLAYING:
             # A previous run may have died (SIGKILL) mid-block, leaving games frozen.
             self._thaw({pid for g in self._find().values() for pid in g})
-        last = last_save = time.monotonic()
+        last = last_save = last_config = time.monotonic()
         try:
             while True:
                 time.sleep(self.interval())
@@ -153,6 +173,9 @@ class Daemon:
                 if self.cycle.phase is not phase_before or now - last_save >= SAVE_EVERY:
                     self.save()
                     last_save = now
+                if now - last_config >= CONFIG_EVERY:
+                    self.reload_config()
+                    last_config = now
         finally:
             self.release()
             self.save()
