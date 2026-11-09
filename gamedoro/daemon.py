@@ -34,6 +34,7 @@ class Daemon:
         self._overlay, self._clock = overlay, clock
         self._frozen: set[int] = set()
         self._warned = False
+        self._warned_overlay = False
 
     def step(self, dt: float) -> None:
         pids = {pid for group in self._find().values() for pid in group}
@@ -44,6 +45,11 @@ class Daemon:
             self._notify("Time's up!", f"Games frozen for {self.cycle.block_seconds / 60:g} min.")
         elif changed is Phase.READY and self._ui_wanted(pids):
             self._notify("Block over", "Press Enter on the overlay to resume.")
+
+        if (self._overlay is not None and not self._overlay.available
+                and not self._warned_overlay):
+            self._warned_overlay = True
+            self._notify("Overlay unavailable", "Blocks will end without waiting for Enter.")
 
         if self.cycle.phase is Phase.READY:
             self._step_ready(pids)

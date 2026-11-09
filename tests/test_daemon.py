@@ -140,6 +140,13 @@ class OverlayTest(unittest.TestCase):
         h.daemon.step(1)
         self.assertEqual(h.daemon.cycle.phase, Phase.PLAYING)
 
+    def test_tells_the_user_once_when_the_overlay_is_unavailable(self):
+        h, o = self.blocked()
+        o.available = False
+        h.daemon.step(1)
+        h.daemon.step(1)
+        self.assertEqual(h.notes.count("Overlay unavailable"), 1)
+
     def test_release_hides_the_overlay(self):
         h, o = self.blocked()
         h.daemon.release()
