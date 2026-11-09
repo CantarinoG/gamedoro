@@ -51,6 +51,11 @@ class StateTest(unittest.TestCase):
         save(Cycle(60, 10, remaining=20), self.path, now=1000)
         self.assertEqual(load(60, 10, self.path, first_bonus_seconds=15).remaining, 20)
 
+    def test_ready_phase_survives_a_restart(self):
+        save(Cycle(60, 10, Phase.READY), self.path, now=1000)
+        c = load(60, 10, self.path, now=9000)
+        self.assertEqual((c.phase, c.remaining), (Phase.READY, 0.0))
+
 
 if __name__ == "__main__":
     unittest.main()

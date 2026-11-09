@@ -37,19 +37,25 @@ class Daemon:
         if changed is Phase.BLOCKED:
             self._warned = False
             self._notify("Time's up!", f"Games frozen for {self.cycle.block_seconds / 60:g} min.")
-        elif changed is Phase.PLAYING:
-            self.release()
-            self._notify("Block over", "Games resumed. Have fun!")
+
+        if self.cycle.phase is Phase.READY:
+            self.resume()  # no confirmation UI yet: resume straight away
             return
 
         if self.cycle.phase is Phase.BLOCKED:
             # Re-freeze every tick so games launched mid-block get caught too.
             self._freeze(pids)
             self._frozen |= pids
-        elif (not self._warned and pids
+        elif (self.cycle.phase is Phase.PLAYING and not self._warned and pids
               and self.cycle.remaining <= WARN_AT < self.cycle.play_seconds):
             self._warned = True
             self._notify("1 minute of play left", "Save your game.")
+
+    def resume(self) -> None:
+        """End a finished block: thaw the games and start a new play cycle."""
+        if self.cycle.resume():
+            self.release()
+            self._notify("Block over", "Games resumed. Have fun!")
 
     def release(self) -> None:
         """Thaw everything we froze. Must run on every exit path."""

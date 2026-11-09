@@ -11,6 +11,8 @@ MAX_TICK = 5.0
 class Phase(Enum):
     PLAYING = "playing"
     BLOCKED = "blocked"
+    # Block time is over; games stay frozen until resume() is called.
+    READY = "ready"
 
 
 @dataclass
@@ -18,7 +20,8 @@ class Cycle:
     play_seconds: float
     block_seconds: float
     phase: Phase = Phase.PLAYING
-    # Remaining play budget while PLAYING, remaining block time while BLOCKED.
+    # Remaining play budget while PLAYING, remaining block time while BLOCKED
+    # (0 while READY).
     remaining: float = 0.0
     # Extra play time for the first cycle only (games take a while to load).
     first_bonus_seconds: float = 0.0
@@ -38,10 +41,18 @@ class Cycle:
                 self.phase = Phase.BLOCKED
                 self.remaining = self.block_seconds
                 return self.phase
-        else:
+        elif self.phase is Phase.BLOCKED:
             self.remaining -= dt
             if self.remaining <= 0:
-                self.phase = Phase.PLAYING
-                self.remaining = self.play_seconds
+                self.phase = Phase.READY
+                self.remaining = 0.0
                 return self.phase
-        return None
+        return None  # READY just waits for resume()
+
+    def resume(self) -> bool:
+        """Leave READY and start a fresh play budget. False if not READY."""
+        if self.phase is not Phase.READY:
+            return False
+        self.phase = Phase.PLAYING
+        self.remaining = self.play_seconds
+        return True

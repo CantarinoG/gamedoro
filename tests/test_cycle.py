@@ -23,11 +23,26 @@ class CycleTest(unittest.TestCase):
         c.tick(2, False)
         self.assertEqual(c.remaining, 3)
 
-    def test_returns_to_playing_with_fresh_budget(self):
+    def test_block_end_waits_for_resume(self):
         c = Cycle(play_seconds=4, block_seconds=2)
         c.tick(4, True)
-        self.assertEqual(c.tick(2, False), Phase.PLAYING)
-        self.assertEqual(c.remaining, 4)
+        self.assertEqual(c.tick(2, False), Phase.READY)
+        self.assertIsNone(c.tick(5, True))  # time passing changes nothing
+        self.assertEqual(c.phase, Phase.READY)
+
+    def test_resume_starts_fresh_budget(self):
+        c = Cycle(play_seconds=4, block_seconds=2)
+        c.tick(4, True)
+        c.tick(2, False)
+        self.assertTrue(c.resume())
+        self.assertEqual((c.phase, c.remaining), (Phase.PLAYING, 4))
+
+    def test_resume_only_works_when_ready(self):
+        c = Cycle(play_seconds=4, block_seconds=2)
+        self.assertFalse(c.resume())
+        c.tick(4, True)
+        self.assertFalse(c.resume())  # still blocked
+        self.assertEqual(c.phase, Phase.BLOCKED)
 
     def test_long_ticks_are_clamped(self):
         c = Cycle(play_seconds=100, block_seconds=5)
@@ -41,6 +56,7 @@ class CycleTest(unittest.TestCase):
         c.tick(2, True)
         self.assertEqual(c.phase, Phase.BLOCKED)
         c.tick(2, False)
+        c.resume()
         self.assertEqual((c.phase, c.remaining), (Phase.PLAYING, 4))
 
     def test_bonus_is_not_spent_while_no_game_runs(self):

@@ -43,6 +43,8 @@ def load(play_seconds: float, block_seconds: float, path: Path,
         remaining -= (time.time() if now is None else now) - saved_at
         if remaining > 0:
             cycle.phase, cycle.remaining = Phase.BLOCKED, min(remaining, block_seconds)
+    elif phase is Phase.READY:
+        cycle.phase, cycle.remaining = Phase.READY, 0.0
     elif 0 < remaining <= play_seconds + first_bonus_seconds:
         cycle.remaining = remaining
     return cycle
