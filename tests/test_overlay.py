@@ -35,14 +35,13 @@ class OverlayTest(unittest.TestCase):
             self.spawned.append(p)
             return p
 
-        self.overlay = Overlay("term --fs", Path(d.name) / "run" / "confirmed",
+        self.overlay = Overlay(Path(d.name) / "run" / "confirmed",
                                spawn=spawn, clock=lambda: self.now)
 
-    def test_launches_ui_inside_the_terminal(self):
+    def test_launches_the_ui_script(self):
         self.overlay.show(until=1600.0)
         cmd = self.spawned[0].cmd
-        self.assertEqual(cmd[:2], ["term", "--fs"])
-        self.assertIn("overlay_ui.py", cmd[3])
+        self.assertTrue(cmd[1].endswith("overlay_ui.py"))
         self.assertEqual(cmd[cmd.index("--until") + 1], "1600.0")
         self.assertEqual(cmd[cmd.index("--confirm-file") + 1], str(self.overlay.confirm_file))
 
@@ -62,9 +61,9 @@ class OverlayTest(unittest.TestCase):
         self.overlay.show(1600)
         self.assertEqual(len(self.spawned), 2)
 
-    def test_missing_terminal_disables_the_overlay(self):
+    def test_unlaunchable_overlay_is_disabled(self):
         def boom(*a, **k):
-            raise FileNotFoundError("term")
+            raise FileNotFoundError("python")
         self.overlay._spawn = boom
         self.overlay.show(1600)
         self.assertFalse(self.overlay.available)

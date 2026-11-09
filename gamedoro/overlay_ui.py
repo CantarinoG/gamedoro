@@ -1,36 +1,28 @@
-"""Fullscreen countdown shown in a terminal while games are frozen.
+"""Fullscreen countdown shown over everything while games are frozen.
 
-Standalone on purpose (stdlib only, no package imports): the daemon runs it
-inside a terminal emulator as `python3 overlay_ui.py --until EPOCH --confirm-file F`.
+Standalone on purpose: the daemon runs it as a subprocess,
+`python3 overlay_ui.py --until EPOCH --confirm-file F`, so a crash here can't
+take the daemon down.
 
-Shows the time left until EPOCH. Once it reaches zero, waits for Enter, then
-creates the confirm file and exits 0. Enter is ignored during the countdown.
+It is a wlr-layer-shell surface on the OVERLAY layer, which sway draws above
+fullscreen windows without touching them (unlike a normal window, which would
+make sway un-fullscreen the game). The keyboard is grabbed exclusively.
+
+Shows the time left until EPOCH. At zero it asks for Enter, then creates the
+confirm file and exits 0. Enter is ignored during the countdown.
 """
 
 import argparse
-import os
-import select
-import signal
 import sys
-import termios
 import time
-import tty
 
-DIGITS = {
-    "0": ("███", "█ █", "█ █", "█ █", "███"),
-    "1": (" █ ", "██ ", " █ ", " █ ", "███"),
-    "2": ("███", "  █", "███", "█  ", "███"),
-    "3": ("███", "  █", "███", "  █", "███"),
-    "4": ("█ █", "█ █", "███", "  █", "  █"),
-    "5": ("███", "█  ", "███", "  █", "███"),
-    "6": ("███", "█  ", "███", "█ █", "███"),
-    "7": ("███", "  █", "  █", "  █", "  █"),
-    "8": ("███", "█ █", "███", "█ █", "███"),
-    "9": ("███", "█ █", "███", "  █", "███"),
-    ":": ("   ", " █ ", "   ", " █ ", "   "),
-}
-
-DIM, BOLD, GREEN, RESET = "\x1b[2m", "\x1b[1m", "\x1b[32m", "\x1b[0m"
+CSS = b"""
+window { background-color: rgba(10, 10, 20, 0.96); }
+.title { color: #cdd6f4; font-size: 36px; }
+.clock { color: #f5e0dc; font-size: 160px; font-weight: bold; }
+.hint  { color: #a6adc8; font-size: 28px; }
+.ready { color: #a6e3a1; }
+"""
 
 
 def clock(seconds: float) -> str:
@@ -39,57 +31,99 @@ def clock(seconds: float) -> str:
     return f"{total // 60:02d}:{total % 60:02d}"
 
 
-def big(text: str) -> list[str]:
-    """Render text in the block font, doubling columns to look square."""
-    rows = []
-    for r in range(5):
-        row = " ".join(DIGITS[ch][r] for ch in text)
-        rows.append("".join(c * 2 for c in row))
-    return rows
+def texts(remaining: float) -> tuple[str, str, str]:
+    """(title, clock, hint) for the given time left."""
+    if remaining > 0:
+        return "Time for a break", clock(remaining), "Go do something productive."
+    return "Break's over", clock(0), "Press Enter to resume your game."
 
 
-def frame(remaining: float, cols: int, rows: int) -> str:
-    """Build the whole screen as one string, centered in cols x rows."""
-    done = remaining <= 0
-    lines = ["Time for a break" if not done else "Break's over",
-             "",
-             *big(clock(remaining)),
-             "",
-             "Go do something productive." if not done
-             else "Press Enter to resume your game."]
-    top = max(0, (rows - len(lines)) // 2)
-    out = ["\x1b[H\x1b[2J" + "\n" * top]
-    for i, line in enumerate(lines):
-        pad = " " * max(0, (cols - len(line)) // 2)
-        style = BOLD + GREEN if done and i in (0, len(lines) - 1) else (
-            DIM if line == "Go do something productive." else "")
-        out.append(f"{pad}{style}{line}{RESET if style else ''}")
-    return "\n".join(out)
+def supported() -> tuple[bool, str]:
+    """Can this Python show the overlay? Returns (ok, reason if not)."""
+    try:
+        import gi
+        gi.require_version("Gtk", "3.0")
+        gi.require_version("GtkLayerShell", "0.1")
+        from gi.repository import GtkLayerShell
+    except (ImportError, ValueError) as e:
+        return False, (f"{e}. On Debian/Ubuntu: "
+                       "sudo apt install gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1")
+    if not GtkLayerShell.is_supported():
+        return False, "compositor doesn't support wlr-layer-shell"
+    return True, ""
 
 
 def run(until: float, confirm_file: str) -> int:
-    fd = sys.stdin.fileno()
-    saved = termios.tcgetattr(fd)
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    try:
-        tty.setcbreak(fd)
-        sys.stdout.write("\x1b[?25l")  # hide cursor
-        while True:
-            remaining = until - time.time()
-            size = os.get_terminal_size()
-            sys.stdout.write(frame(remaining, size.columns, size.lines))
-            sys.stdout.flush()
-            ready, _, _ = select.select([fd], [], [], 0.25)
-            if ready:
-                key = os.read(fd, 32)
-                if remaining <= 0 and (b"\n" in key or b"\r" in key):
-                    with open(confirm_file, "w"):
-                        pass
-                    return 0
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
-        sys.stdout.write("\x1b[?25h\x1b[2J\x1b[H")
-        sys.stdout.flush()
+    import gi
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    gi.require_version("GtkLayerShell", "0.1")
+    from gi.repository import Gdk, GLib, Gtk, GtkLayerShell
+
+    provider = Gtk.CssProvider()
+    provider.load_from_data(CSS)
+    Gtk.StyleContext.add_provider_for_screen(
+        Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+    labels = []  # (title, clock, hint) label triples, one per monitor
+    confirmed = []
+
+    def build(monitor, take_keyboard: bool):
+        win = Gtk.Window()
+        GtkLayerShell.init_for_window(win)
+        GtkLayerShell.set_namespace(win, "gamedoro")
+        GtkLayerShell.set_layer(win, GtkLayerShell.Layer.OVERLAY)
+        GtkLayerShell.set_monitor(win, monitor)
+        for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM,
+                     GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
+            GtkLayerShell.set_anchor(win, edge, True)
+        GtkLayerShell.set_exclusive_zone(win, -1)  # cover bars too
+        GtkLayerShell.set_keyboard_mode(
+            win, GtkLayerShell.KeyboardMode.EXCLUSIVE if take_keyboard
+            else GtkLayerShell.KeyboardMode.NONE)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24,
+                      halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+        trio = []
+        for css in ("title", "clock", "hint"):
+            lbl = Gtk.Label()
+            lbl.get_style_context().add_class(css)
+            box.pack_start(lbl, False, False, 0)
+            trio.append(lbl)
+        win.add(box)
+        win.connect("key-press-event", on_key)
+        win.show_all()
+        labels.append(trio)
+
+    def on_key(_win, event):
+        if until - time.time() <= 0 and event.keyval in (
+                Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter):
+            with open(confirm_file, "w"):
+                pass
+            confirmed.append(True)
+            Gtk.main_quit()
+        return True  # swallow every key; nothing else should reach the game
+
+    def tick():
+        title, clk, hint = texts(until - time.time())
+        done = until - time.time() <= 0
+        for t, c, h in labels:
+            t.set_text(title)
+            c.set_text(clk)
+            h.set_text(hint)
+            for lbl in (t, h):
+                ctx = lbl.get_style_context()
+                (ctx.add_class if done else ctx.remove_class)("ready")
+        return True
+
+    display = Gdk.Display.get_default()
+    for i in range(display.get_n_monitors()):
+        build(display.get_monitor(i), take_keyboard=(i == 0))
+    tick()
+    GLib.timeout_add(250, tick)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, 15, Gtk.main_quit)  # SIGTERM
+    Gtk.main()
+    return 0
 
 
 def main() -> None:
@@ -97,6 +131,10 @@ def main() -> None:
     ap.add_argument("--until", type=float, required=True, help="epoch seconds")
     ap.add_argument("--confirm-file", required=True)
     args = ap.parse_args()
+    ok, reason = supported()
+    if not ok:
+        print(f"gamedoro overlay: {reason}", file=sys.stderr)
+        sys.exit(2)
     sys.exit(run(args.until, args.confirm_file))
 
 
