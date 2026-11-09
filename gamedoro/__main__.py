@@ -1,6 +1,6 @@
 import argparse
 
-from .cycle import Cycle
+from . import state
 from .daemon import Daemon
 
 
@@ -13,7 +13,9 @@ def main() -> None:
     args = ap.parse_args()
     if args.play <= 0 or args.block <= 0:
         ap.error("--play and --block must be positive")
-    Daemon(Cycle(args.play * 60, args.block * 60)).run()
+    path = state.default_path()
+    cycle = state.load(args.play * 60, args.block * 60, path)
+    Daemon(cycle, state_path=path).run()
 
 
 if __name__ == "__main__":

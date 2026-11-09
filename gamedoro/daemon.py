@@ -4,10 +4,13 @@ import signal
 import subprocess
 import time
 
-from . import freezer, games
+from pathlib import Path
+
+from . import freezer, games, state
 from .cycle import Cycle, Phase
 
 WARN_AT = 60.0  # seconds of play left when the warning goes out
+SAVE_EVERY = 10.0  # seconds between state saves
 
 
 def notify(title: str, body: str = "") -> None:
@@ -19,8 +22,10 @@ def notify(title: str, body: str = "") -> None:
 
 class Daemon:
     def __init__(self, cycle: Cycle, find=games.find_game_pids,
-                 freeze=freezer.freeze, thaw=freezer.thaw, notify=notify):
+                 freeze=freezer.freeze, thaw=freezer.thaw, notify=notify,
+                 state_path: Path | None = None):
         self.cycle = cycle
+        self.state_path = state_path
         self._find, self._freeze, self._thaw, self._notify = find, freeze, thaw, notify
         self._frozen: set[int] = set()
         self._warned = False
@@ -51,17 +56,32 @@ class Daemon:
         self._thaw(self._frozen)
         self._frozen.clear()
 
+    def save(self) -> None:
+        if self.state_path is not None:
+            try:
+                state.save(self.cycle, self.state_path)
+            except OSError:
+                pass  # losing a save is better than crashing mid-block
+
     def run(self, interval: float = 1.0) -> None:
         def stop(*_):
             raise SystemExit(0)
         signal.signal(signal.SIGTERM, stop)
         signal.signal(signal.SIGINT, stop)
-        last = time.monotonic()
+        if self.cycle.phase is Phase.PLAYING:
+            # A previous run may have died (SIGKILL) mid-block, leaving games frozen.
+            self._thaw({pid for g in self._find().values() for pid in g})
+        last = last_save = time.monotonic()
         try:
             while True:
                 time.sleep(interval)
                 now = time.monotonic()
+                phase_before = self.cycle.phase
                 self.step(now - last)
                 last = now
+                if self.cycle.phase is not phase_before or now - last_save >= SAVE_EVERY:
+                    self.save()
+                    last_save = now
         finally:
             self.release()
+            self.save()
