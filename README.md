@@ -4,7 +4,7 @@ A gamified pomodoro for Steam on Linux. You may play for X minutes; then every
 running Steam game is frozen (`SIGSTOP`) for Y minutes. The game stays open,
 it just stops until the block ends, then resumes where it left off.
 
-Python 3.10+, stdlib only for the core. The overlay additionally needs GTK 3 and
+Python 3.11+, stdlib only for the core. The overlay additionally needs GTK 3 and
 gtk-layer-shell bindings (Debian/Ubuntu: `sudo apt install gir1.2-gtk-3.0
 gir1.2-gtklayershell-0.1`) and a compositor with wlr-layer-shell, like sway.
 Without them gamedoro warns and runs with no overlay. `notify-send` is used for
@@ -12,11 +12,46 @@ notifications if present.
 
 ## Usage
 
-    python3 -m gamedoro --play 50 --block 10 --first-bonus 10 [--no-overlay]
+    python3 -m gamedoro                      # uses ~/.config/gamedoro/config.toml
+    python3 -m gamedoro --play 30 --block 5  # flags override the file
 
-- `--first-bonus` adds extra minutes to the **first** play cycle after the
-  daemon starts with no saved state, since games take a while to load
-  (default 10, `0` disables). Later cycles get exactly `--play`.
+### Settings
+
+`~/.config/gamedoro/config.toml` (see `config.example.toml`):
+
+    play = 50         # minutes of play per cycle
+    block = 10        # minutes games stay frozen
+    first_bonus = 10  # extra minutes on the first cycle (games take time to load)
+    overlay = true    # countdown screen + wait for Enter; false = blocks just end
+
+Precedence: built-in defaults < config file < command-line flags
+(`--play`, `--block`, `--first-bonus`, `--no-overlay`, `--config FILE`).
+
+While the daemon runs, edits to the file are picked up within a few seconds
+and you get a notification. They apply **from the next cycle**: a play budget or
+block already in progress keeps the length it started with, so you can't
+shorten a block by editing the file. A broken edit is reported and the old
+settings stay. (`overlay` and flags need a restart.)
+
+### Run on login
+
+    ./install.sh          # install + enable; starts at your next login
+    ./install.sh --now    # ...and start it right away
+    ./install.sh uninstall
+
+This writes a systemd **user** service with absolute paths, so it doesn't matter
+where the repo lives. The service finds sway's Wayland sockets itself, so no
+sway config changes are needed. Useful commands:
+
+    systemctl --user status gamedoro
+    systemctl --user restart gamedoro      # e.g. after changing flags
+    journalctl --user -u gamedoro -f       # logs
+
+A config error at startup makes the service stop (and show as failed) instead of
+restart-looping; fix the file and `systemctl --user start gamedoro`.
+
+### Behaviour
+
 - The play budget only drains **while a Steam game is running**.
 - A warning notification appears with 1 minute of play left.
 - When the budget is spent, all game processes are frozen for the block.
@@ -28,23 +63,10 @@ notifications if present.
   back and it returns. It doesn't take the keyboard during the countdown, only
   once it's asking for Enter. If you quit the game mid-block the overlay goes
   away too (the block timer keeps running).
-- `--no-overlay` skips the overlay and the Enter step: blocks just end.
 - Stopping the daemon (Ctrl-C, SIGTERM, or closing its terminal / SIGHUP)
   thaws everything it froze.
 - State lives in `~/.local/state/gamedoro/state.json`. A block keeps counting
   down while the daemon is off, so restarting it doesn't skip the block.
-
-### Run on login
-
-    mkdir -p ~/.config/systemd/user
-    cp systemd/gamedoro.service ~/.config/systemd/user/
-    systemctl --user enable --now gamedoro
-
-(Edit `WorkingDirectory` and the minutes in the unit first.) The overlay needs
-the Wayland environment, which user services don't get by default. Add this to
-your sway config so it is imported before the service starts:
-
-    exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK
 
 ## How it works
 
@@ -53,6 +75,8 @@ your sway config so it is imported before the service starts:
 | `cycle.py` | Pure play/block state machine |
 | `games.py` | Finds games by scanning `/proc/*/environ` for `SteamAppId` |
 | `freezer.py` | `SIGSTOP` / `SIGCONT` |
+| `config.py` | Config file, defaults/flags precedence, live reload watcher |
+| `env.py` | Finds the Wayland/sway sockets when run as a service |
 | `state.py` | Save/restore across restarts |
 | `overlay.py` | Launches/respawns the overlay process, reads the Enter confirmation |
 | `sway.py` | Asks sway which screens currently show a game window |
