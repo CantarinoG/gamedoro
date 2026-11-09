@@ -1,10 +1,11 @@
 import unittest
 
-from gamedoro.sway import game_areas, query_game_areas
+from gamedoro.sway import GameView, game_view, query_game_view
 
 
-def win(pid, visible=True, cls=None, app_id=None):
+def win(pid, visible=True, cls=None, app_id=None, size=(1920, 1080)):
     return {"type": "con", "pid": pid, "visible": visible, "nodes": [],
+            "rect": {"x": 0, "y": 0, "width": size[0], "height": size[1]},
             "app_id": app_id, "window_properties": {"class": cls} if cls else None}
 
 
@@ -18,31 +19,66 @@ def tree(*outputs):
     return {"type": "root", "nodes": list(outputs)}
 
 
-class GameAreasTest(unittest.TestCase):
+def areas(t, pids, app_ids=()):
+    return game_view(t, set(pids), set(app_ids)).areas
+
+
+class AreasTest(unittest.TestCase):
     def test_matches_by_pid(self):
         t = tree(output(0, [win(100), win(7)]))
-        self.assertEqual(game_areas(t, {100}, set()), {(0, 0, 1920, 1080)})
+        self.assertEqual(areas(t, {100}), {(0, 0, 1920, 1080)})
 
     def test_matches_proton_window_class(self):
         t = tree(output(0, [win(5, cls="steam_app_620")]))
-        self.assertEqual(game_areas(t, set(), {"620"}), {(0, 0, 1920, 1080)})
+        self.assertEqual(areas(t, set(), {"620"}), {(0, 0, 1920, 1080)})
 
     def test_only_the_output_showing_the_game(self):
         t = tree(output(0, [win(7)]), output(1920, [win(100)], width=2560))
-        self.assertEqual(game_areas(t, {100}, set()), {(1920, 0, 2560, 1080)})
+        self.assertEqual(areas(t, {100}), {(1920, 0, 2560, 1080)})
 
     def test_game_on_a_hidden_workspace_does_not_count(self):
         t = tree(output(0, [win(100, visible=False)]))
-        self.assertEqual(game_areas(t, {100}, set()), set())
+        self.assertEqual(areas(t, {100}), set())
 
     def test_unrelated_windows_are_ignored(self):
         t = tree(output(0, [win(7, cls="firefox")]))
-        self.assertEqual(game_areas(t, {100}, {"620"}), set())
+        self.assertEqual(areas(t, {100}, {"620"}), set())
 
     def test_floating_game_windows_count(self):
         out = output(0, [])
         out["nodes"][0]["floating_nodes"] = [win(100)]
-        self.assertEqual(game_areas(tree(out), {100}, set()), {(0, 0, 1920, 1080)})
+        self.assertEqual(areas(tree(out), {100}), {(0, 0, 1920, 1080)})
+
+
+class WindowPidsTest(unittest.TestCase):
+    def pids(self, t, pids, app_ids=()):
+        return game_view(t, set(pids), set(app_ids)).window_pids
+
+    def test_returns_the_process_owning_the_game_window(self):
+        t = tree(output(0, [win(4106, cls="steam_app_12210"), win(7)]))
+        self.assertEqual(self.pids(t, {4106, 3226}, {"12210"}), {4106})
+
+    def test_found_even_when_not_visible(self):
+        # on another workspace: we still need to know what to freeze
+        t = tree(output(0, [win(4106, visible=False)]))
+        self.assertEqual(self.pids(t, {4106}), {4106})
+
+    def test_small_helper_windows_are_ignored(self):
+        t = tree(output(0, [win(4106, cls="steam_app_12210"),
+                            win(3345, cls="steam_app_12210", size=(160, 50))]))
+        self.assertEqual(self.pids(t, {4106, 3345}, {"12210"}), {4106})
+
+    def test_several_big_windows_are_all_kept(self):
+        t = tree(output(0, [win(1), win(2, size=(1200, 900))]))
+        self.assertEqual(self.pids(t, {1, 2}), {1, 2})
+
+    def test_never_returns_pids_outside_the_game(self):
+        # class matches but the pid isn't one of ours: don't touch it
+        t = tree(output(0, [win(999, cls="steam_app_620")]))
+        self.assertEqual(self.pids(t, {100}, {"620"}), set())
+
+    def test_no_windows_gives_an_empty_set(self):
+        self.assertEqual(self.pids(tree(output(0, [])), {100}), set())
 
 
 class QueryTest(unittest.TestCase):
@@ -55,13 +91,13 @@ class QueryTest(unittest.TestCase):
                 stdout = b'{"type": "root", "nodes": []}'
             return R
 
-        self.assertEqual(query_game_areas({1}, set(), run=fake_run), set())
+        self.assertEqual(query_game_view({1}, set(), run=fake_run), GameView())
         self.assertIn("XDG_RUNTIME_DIR", seen["env"])
 
     def test_returns_none_when_sway_is_unavailable(self):
         def boom(*a, **k):
             raise FileNotFoundError("swaymsg")
-        self.assertIsNone(query_game_areas({1}, set(), run=boom))
+        self.assertIsNone(query_game_view({1}, set(), run=boom))
 
 
 if __name__ == "__main__":

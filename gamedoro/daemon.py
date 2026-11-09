@@ -36,9 +36,9 @@ class Daemon:
                  launch_bonus_seconds: float = 0.0):
         """`overlay` is optional; without one, blocks end by themselves.
 
-        `locate(pids, app_ids)` returns the screens currently showing the game
-        (an empty set if it's not on screen), or None if that can't be known,
-        in which case the overlay covers every screen.
+        `locate(pids, app_ids)` returns a sway.GameView (the screens currently
+        showing the game, empty if it's not on screen), or None if that can't be
+        known, in which case the overlay covers every screen.
 
         `watcher` (a config.Watcher) is polled to pick up edited settings.
 
@@ -118,7 +118,8 @@ class Daemon:
 
     def _show_overlay(self, pids, until: float) -> None:
         """Cover the screen(s) showing the game; nothing if you're elsewhere."""
-        areas = self._locate(pids, self._app_ids) if self._locate else None
+        view = self._locate(pids, self._app_ids) if self._locate else None
+        areas = None if view is None else view.areas
         if areas is not None and not areas:
             self._overlay.hide()  # game isn't on screen: leave the user alone
         else:

@@ -3,6 +3,7 @@ import unittest
 from gamedoro.config import Settings
 from gamedoro.cycle import Cycle, Phase
 from gamedoro.daemon import FAST_INTERVAL, OVERLAY_MARGIN, Daemon
+from gamedoro.sway import GameView
 
 
 class FakeOverlay:
@@ -155,7 +156,8 @@ class OverlayTest(unittest.TestCase):
     def blocked_with_screens(self, screens):
         o = FakeOverlay()
         h = Harness(play=1, block=5, overlay=o,
-                    locate=lambda pids, app_ids: h.screens)
+                    locate=lambda pids, app_ids: None if h.screens is None
+                    else GameView(h.screens, set(pids)))
         h.screens = screens
         h.daemon.step(1)
         return h, o
