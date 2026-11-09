@@ -8,6 +8,9 @@ from pathlib import Path
 from . import freezer, games, state
 from .cycle import Cycle, Phase
 
+# SIGHUP matters: closing the terminal the daemon runs in sends it, and dying
+# without thawing would leave the game frozen.
+STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 WARN_AT = 60.0  # seconds of play left when the warning goes out
 SAVE_EVERY = 10.0  # seconds between state saves
 # The overlay's clock runs a little past the daemon's, so that when it reads
@@ -134,8 +137,8 @@ class Daemon:
     def run(self) -> None:
         def stop(*_):
             raise SystemExit(0)
-        signal.signal(signal.SIGTERM, stop)
-        signal.signal(signal.SIGINT, stop)
+        for sig in STOP_SIGNALS:
+            signal.signal(sig, stop)
         if self.cycle.phase is Phase.PLAYING:
             # A previous run may have died (SIGKILL) mid-block, leaving games frozen.
             self._thaw({pid for g in self._find().values() for pid in g})

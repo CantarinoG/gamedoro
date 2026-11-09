@@ -29,7 +29,8 @@ notifications if present.
   once it's asking for Enter. If you quit the game mid-block the overlay goes
   away too (the block timer keeps running).
 - `--no-overlay` skips the overlay and the Enter step: blocks just end.
-- Stopping the daemon (Ctrl-C / SIGTERM) thaws everything it froze.
+- Stopping the daemon (Ctrl-C, SIGTERM, or closing its terminal / SIGHUP)
+  thaws everything it froze.
 - State lives in `~/.local/state/gamedoro/state.json`. A block keeps counting
   down while the daemon is off, so restarting it doesn't skip the block.
 
