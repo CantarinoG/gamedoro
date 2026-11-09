@@ -59,8 +59,13 @@ restart-looping; fix the file and `systemctl --user start gamedoro`.
   It's capped at `play + launch_bonus`, so relaunching can't stack bonuses. A game
   already running when the daemon starts, or launched during a block, gets none.
 - A warning notification appears with 1 minute of play left.
-- When the budget is spent, all game processes are frozen for the block.
-  Games launched during a block are frozen too.
+- When the budget is spent, the game is frozen for the block. Games launched
+  during a block are frozen too.
+- Only the process that owns the game's window is frozen, not its whole process
+  tree. A Proton game's tree includes helpers (e.g. Rockstar Social Club's
+  embedded Chromium) whose watchdogs and network sessions don't survive a long
+  stall, which can leave the game hung after resuming. Without sway, or if no
+  window appears within 15 s, the whole tree is frozen instead.
 - A fullscreen overlay shows the countdown. When it hits zero the game stays
   frozen until you press **Enter** on the overlay.
 - The overlay only covers the screen where the frozen game is visible. Switch
