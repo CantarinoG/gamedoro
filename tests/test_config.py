@@ -26,12 +26,21 @@ class ConfigTest(unittest.TestCase):
     def test_file_overrides_defaults(self):
         self.write("play = 30\nblock = 5.5\noverlay = false\n")
         s = resolve(self.path)
-        self.assertEqual((s.play, s.block, s.first_bonus, s.overlay), (30, 5.5, 10, False))
+        self.assertEqual((s.play, s.block, s.launch_bonus, s.overlay), (30, 5.5, 10, False))
 
     def test_flags_override_the_file(self):
         self.write("play = 30\nblock = 5\n")
         s = resolve(self.path, {"play": 45, "block": None, "overlay": None})
         self.assertEqual((s.play, s.block), (45, 5))  # None = flag not given
+
+    def test_old_first_bonus_name_still_works(self):
+        self.write("first_bonus = 4\n")
+        self.assertEqual(resolve(self.path).launch_bonus, 4)
+
+    def test_setting_both_names_is_an_error(self):
+        self.write("first_bonus = 4\nlaunch_bonus = 5\n")
+        with self.assertRaisesRegex(ConfigError, "not both"):
+            resolve(self.path)
 
     def test_unknown_key_is_rejected_by_name(self):
         self.write("plya = 30\n")
@@ -50,7 +59,7 @@ class ConfigTest(unittest.TestCase):
             resolve(self.path)
 
     def test_values_are_validated(self):
-        for text in ("play = 0\n", "block = -1\n", "first_bonus = -5\n"):
+        for text in ("play = 0\n", "block = -1\n", "launch_bonus = -5\n"):
             self.write(text)
             with self.assertRaises(ConfigError, msg=text):
                 resolve(self.path)

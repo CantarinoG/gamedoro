@@ -18,16 +18,17 @@ def main() -> None:
                     help="minutes of play allowed per cycle (default: 50)")
     ap.add_argument("--block", type=float, metavar="MIN",
                     help="minutes games stay frozen (default: 10)")
-    ap.add_argument("--first-bonus", type=float, metavar="MIN",
-                    help="extra minutes added to the first play cycle, to cover "
-                         "game loading (default: 10; 0 disables)")
+    ap.add_argument("--launch-bonus", "--first-bonus", dest="launch_bonus", type=float,
+                    metavar="MIN",
+                    help="extra play minutes each time a game launches, to cover "
+                         "loading (default: 10; 0 disables; capped at play + bonus)")
     ap.add_argument("--no-overlay", dest="overlay", action="store_const", const=False,
                     help="no countdown screen; blocks end by themselves")
     args = ap.parse_args()
 
     # Only flags actually given override the config file.
     overrides = {"play": args.play, "block": args.block,
-                 "first_bonus": args.first_bonus, "overlay": args.overlay}
+                 "launch_bonus": args.launch_bonus, "overlay": args.overlay}
     try:
         settings = config.resolve(args.config, overrides)
     except config.ConfigError as e:
@@ -44,10 +45,10 @@ def main() -> None:
 
     path = state.default_path()
     cycle = state.load(settings.play * 60, settings.block * 60, path,
-                       launch_bonus_seconds=settings.first_bonus * 60)
+                       launch_bonus_seconds=settings.launch_bonus * 60)
     Daemon(cycle, state_path=path, overlay=overlay, locate=sway.query_game_areas,
            watcher=config.Watcher(args.config, overrides),
-           launch_bonus_seconds=settings.first_bonus * 60).run()
+           launch_bonus_seconds=settings.launch_bonus * 60).run()
 
 
 if __name__ == "__main__":

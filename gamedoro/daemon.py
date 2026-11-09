@@ -141,7 +141,7 @@ class Daemon:
         elif new is not None:
             self.cycle.play_seconds = new.play * 60
             self.cycle.block_seconds = new.block * 60
-            self.launch_bonus_seconds = new.first_bonus * 60
+            self.launch_bonus_seconds = new.launch_bonus * 60
             self._notify("gamedoro: settings reloaded",
                          f"play {new.play:g} min, block {new.block:g} min "
                          "(from the next cycle)")

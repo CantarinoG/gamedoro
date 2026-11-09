@@ -14,18 +14,21 @@ class ConfigError(Exception):
 class Settings:
     play: float = 50.0        # minutes of play per cycle
     block: float = 10.0       # minutes games stay frozen
-    first_bonus: float = 10.0  # extra minutes on the first cycle
+    launch_bonus: float = 10.0  # extra minutes whenever a game launches (loading)
     overlay: bool = True      # show the countdown / wait for Enter
 
     def validate(self) -> "Settings":
         if self.play <= 0 or self.block <= 0:
             raise ConfigError("play and block must be positive")
-        if self.first_bonus < 0:
-            raise ConfigError("first_bonus can't be negative")
+        if self.launch_bonus < 0:
+            raise ConfigError("launch_bonus can't be negative")
         return self
 
 
-FIELDS = {"play": float, "block": float, "first_bonus": float, "overlay": bool}
+FIELDS = {"play": float, "block": float, "launch_bonus": float, "overlay": bool}
+# Old names still accepted in the config file. first_bonus used to be a one-off
+# bonus for the first cycle; it now means the same as launch_bonus.
+ALIASES = {"first_bonus": "launch_bonus"}
 
 
 def default_path() -> Path:
@@ -41,6 +44,11 @@ def read_file(path: Path) -> dict:
         return {}
     except (OSError, tomllib.TOMLDecodeError) as e:
         raise ConfigError(f"{path}: {e}") from e
+    for old, new in ALIASES.items():
+        if old in raw:
+            if new in raw:
+                raise ConfigError(f"{path}: set {new}, not both {new} and {old}")
+            raw[new] = raw.pop(old)
     unknown = set(raw) - set(FIELDS)
     if unknown:
         raise ConfigError(f"{path}: unknown setting(s) {', '.join(sorted(unknown))} "

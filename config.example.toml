@@ -8,8 +8,10 @@ play = 50
 # Minutes your games stay frozen afterwards.
 block = 10
 
-# Extra minutes added to the first cycle after start, to cover game loading.
-first_bonus = 10
+# Extra play minutes granted each time a game launches (loading isn't play
+# time). Capped at play + launch_bonus, so relaunching can't stack it up.
+# (Older configs call this first_bonus; that name still works.)
+launch_bonus = 10
 
 # Show the countdown overlay and wait for Enter. false = blocks just end.
 overlay = true

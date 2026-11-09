@@ -21,17 +21,18 @@ notifications if present.
 
     play = 50         # minutes of play per cycle
     block = 10        # minutes games stay frozen
-    first_bonus = 10  # extra minutes on the first cycle (games take time to load)
+    launch_bonus = 10 # extra minutes each time a game launches (loading screens)
     overlay = true    # countdown screen + wait for Enter; false = blocks just end
 
 Precedence: built-in defaults < config file < command-line flags
-(`--play`, `--block`, `--first-bonus`, `--no-overlay`, `--config FILE`).
+(`--play`, `--block`, `--launch-bonus`, `--no-overlay`, `--config FILE`).
+`first_bonus` / `--first-bonus` are the old names and still work.
 
 While the daemon runs, edits to the file are picked up within a few seconds
 and you get a notification. They apply **from the next cycle**: a play budget or
 block already in progress keeps the length it started with, so you can't
 shorten a block by editing the file. A broken edit is reported and the old
-settings stay. (`overlay` and flags need a restart.)
+settings stay. (`overlay` and flags need a restart. `launch_bonus` applies immediately.)
 
 ### Run on login
 
@@ -53,6 +54,10 @@ restart-looping; fix the file and `systemctl --user start gamedoro`.
 ### Behaviour
 
 - The play budget only drains **while a Steam game is running**.
+- **Launch bonus:** every time a game launches (none was running before), your
+  budget is topped up by `launch_bonus` minutes, since loading isn't play time.
+  It's capped at `play + launch_bonus`, so relaunching can't stack bonuses. A game
+  already running when the daemon starts, or launched during a block, gets none.
 - A warning notification appears with 1 minute of play left.
 - When the budget is spent, all game processes are frozen for the block.
   Games launched during a block are frozen too.

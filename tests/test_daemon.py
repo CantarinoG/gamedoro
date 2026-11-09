@@ -269,6 +269,12 @@ class ReloadTest(unittest.TestCase):
         h.daemon._watcher = FakeWatcher()
         return h
 
+    def test_launch_bonus_changes_apply_immediately(self):
+        h = self.make()
+        h.daemon._watcher.pending = (Settings(launch_bonus=3), None)
+        h.daemon.reload_config()
+        self.assertEqual(h.daemon.launch_bonus_seconds, 180)
+
     def test_new_lengths_apply_to_the_next_cycle_only(self):
         h = self.make()
         h.daemon.step(5)
