@@ -1,12 +1,15 @@
 """Fullscreen countdown shown over everything while games are frozen.
 
 Standalone on purpose: the daemon runs it as a subprocess,
-`python3 overlay_ui.py --until EPOCH --confirm-file F`, so a crash here can't
-take the daemon down.
+`python3 overlay_ui.py --until EPOCH --confirm-file F [--area X,Y,W,H ...]`, so a
+crash here can't take the daemon down. With --area it covers only the screens
+with that geometry (all screens if none are given or none match).
 
 It is a wlr-layer-shell surface on the OVERLAY layer, which sway draws above
 fullscreen windows without touching them (unlike a normal window, which would
-make sway un-fullscreen the game). The keyboard is grabbed exclusively.
+make sway un-fullscreen the game). The keyboard is left alone during the
+countdown and grabbed only once Enter is being asked for, because an exclusive
+grab would otherwise stop you typing in anything else.
 
 Shows the time left until EPOCH. At zero it asks for Enter, then creates the
 confirm file and exits 0. Enter is ignored during the countdown.
@@ -53,7 +56,21 @@ def supported() -> tuple[bool, str]:
     return True, ""
 
 
-def run(until: float, confirm_file: str) -> int:
+def parse_area(text: str) -> tuple[int, int, int, int]:
+    x, y, w, h = (int(v) for v in text.split(","))
+    return x, y, w, h
+
+
+def pick_monitors(geometries: list, areas: list) -> list[int]:
+    """Indexes of the monitors to cover. Falls back to all if nothing matches
+    (better a too-big overlay than none: the game is already frozen)."""
+    if not areas:
+        return list(range(len(geometries)))
+    picked = [i for i, g in enumerate(geometries) if g in areas]
+    return picked or list(range(len(geometries)))
+
+
+def run(until: float, confirm_file: str, areas: list) -> int:
     import gi
     gi.require_version("Gtk", "3.0")
     gi.require_version("Gdk", "3.0")
@@ -66,9 +83,9 @@ def run(until: float, confirm_file: str) -> int:
         Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
     labels = []  # (title, clock, hint) label triples, one per monitor
-    confirmed = []
+    windows = []
 
-    def build(monitor, take_keyboard: bool):
+    def build(monitor):
         win = Gtk.Window()
         GtkLayerShell.init_for_window(win)
         GtkLayerShell.set_namespace(win, "gamedoro")
@@ -78,9 +95,7 @@ def run(until: float, confirm_file: str) -> int:
                      GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
             GtkLayerShell.set_anchor(win, edge, True)
         GtkLayerShell.set_exclusive_zone(win, -1)  # cover bars too
-        GtkLayerShell.set_keyboard_mode(
-            win, GtkLayerShell.KeyboardMode.EXCLUSIVE if take_keyboard
-            else GtkLayerShell.KeyboardMode.NONE)
+        GtkLayerShell.set_keyboard_mode(win, GtkLayerShell.KeyboardMode.NONE)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24,
                       halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
@@ -93,6 +108,7 @@ def run(until: float, confirm_file: str) -> int:
         win.add(box)
         win.connect("key-press-event", on_key)
         win.show_all()
+        windows.append(win)
         labels.append(trio)  # tick() shows/hides the hint as needed
 
     def on_key(_win, event):
@@ -100,13 +116,17 @@ def run(until: float, confirm_file: str) -> int:
                 Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter):
             with open(confirm_file, "w"):
                 pass
-            confirmed.append(True)
             Gtk.main_quit()
         return True  # swallow every key; nothing else should reach the game
 
     def tick():
         title, clk, hint = texts(until - time.time())
         done = until - time.time() <= 0
+        if done and not grabbed:
+            # Now (and only now) we need Enter, so take the keyboard.
+            grabbed.append(True)
+            GtkLayerShell.set_keyboard_mode(
+                windows[0], GtkLayerShell.KeyboardMode.EXCLUSIVE)
         for t, c, h in labels:
             t.set_text(title)
             c.set_text(clk)
@@ -117,9 +137,13 @@ def run(until: float, confirm_file: str) -> int:
                 (ctx.add_class if done else ctx.remove_class)("ready")
         return True
 
+    grabbed = []
     display = Gdk.Display.get_default()
-    for i in range(display.get_n_monitors()):
-        build(display.get_monitor(i), take_keyboard=(i == 0))
+    monitors = [display.get_monitor(i) for i in range(display.get_n_monitors())]
+    geometries = [(m.get_geometry().x, m.get_geometry().y,
+                   m.get_geometry().width, m.get_geometry().height) for m in monitors]
+    for i in pick_monitors(geometries, areas):
+        build(monitors[i])
     tick()
     GLib.timeout_add(250, tick)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, 15, Gtk.main_quit)  # SIGTERM
@@ -131,12 +155,14 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--until", type=float, required=True, help="epoch seconds")
     ap.add_argument("--confirm-file", required=True)
+    ap.add_argument("--area", action="append", default=[], type=parse_area,
+                    metavar="X,Y,W,H", help="cover only this screen (repeatable)")
     args = ap.parse_args()
     ok, reason = supported()
     if not ok:
         print(f"gamedoro overlay: {reason}", file=sys.stderr)
         sys.exit(2)
-    sys.exit(run(args.until, args.confirm_file))
+    sys.exit(run(args.until, args.confirm_file, args.area))
 
 
 if __name__ == "__main__":

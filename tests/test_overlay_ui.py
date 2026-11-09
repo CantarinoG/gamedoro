@@ -1,6 +1,6 @@
 import unittest
 
-from gamedoro.overlay_ui import clock, supported, texts
+from gamedoro.overlay_ui import clock, parse_area, pick_monitors, supported, texts
 
 
 class ClockTest(unittest.TestCase):
@@ -27,6 +27,22 @@ class TextsTest(unittest.TestCase):
         title, clk, hint = texts(0)
         self.assertEqual(clk, "00:00")
         self.assertIn("Enter", hint)
+
+
+class PickMonitorsTest(unittest.TestCase):
+    screens = [(0, 0, 1920, 1080), (1920, 0, 2560, 1440)]
+
+    def test_no_areas_covers_everything(self):
+        self.assertEqual(pick_monitors(self.screens, []), [0, 1])
+
+    def test_picks_matching_screens_only(self):
+        self.assertEqual(pick_monitors(self.screens, [(1920, 0, 2560, 1440)]), [1])
+
+    def test_unmatched_areas_fall_back_to_everything(self):
+        self.assertEqual(pick_monitors(self.screens, [(5, 5, 5, 5)]), [0, 1])
+
+    def test_parse_area(self):
+        self.assertEqual(parse_area("0,0,1920,1080"), (0, 0, 1920, 1080))
 
 
 class SupportedTest(unittest.TestCase):
