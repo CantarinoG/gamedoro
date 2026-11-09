@@ -3,7 +3,6 @@
 import signal
 import subprocess
 import time
-
 from pathlib import Path
 
 from . import freezer, games, state
@@ -11,6 +10,9 @@ from .cycle import Cycle, Phase
 
 WARN_AT = 60.0  # seconds of play left when the warning goes out
 SAVE_EVERY = 10.0  # seconds between state saves
+# The overlay's clock runs a little past the daemon's, so that when it reads
+# 00:00 the daemon is already waiting for Enter.
+OVERLAY_MARGIN = 1.5
 
 
 def notify(title: str, body: str = "") -> None:
@@ -23,10 +25,13 @@ def notify(title: str, body: str = "") -> None:
 class Daemon:
     def __init__(self, cycle: Cycle, find=games.find_game_pids,
                  freeze=freezer.freeze, thaw=freezer.thaw, notify=notify,
-                 state_path: Path | None = None):
+                 state_path: Path | None = None, overlay=None,
+                 clock=time.time):
+        """`overlay` is optional; without one, blocks end by themselves."""
         self.cycle = cycle
         self.state_path = state_path
         self._find, self._freeze, self._thaw, self._notify = find, freeze, thaw, notify
+        self._overlay, self._clock = overlay, clock
         self._frozen: set[int] = set()
         self._warned = False
 
@@ -37,19 +42,45 @@ class Daemon:
         if changed is Phase.BLOCKED:
             self._warned = False
             self._notify("Time's up!", f"Games frozen for {self.cycle.block_seconds / 60:g} min.")
+        elif changed is Phase.READY and self._ui_wanted(pids):
+            self._notify("Block over", "Press Enter on the overlay to resume.")
 
         if self.cycle.phase is Phase.READY:
-            self.resume()  # no confirmation UI yet: resume straight away
-            return
-
-        if self.cycle.phase is Phase.BLOCKED:
-            # Re-freeze every tick so games launched mid-block get caught too.
-            self._freeze(pids)
-            self._frozen |= pids
-        elif (self.cycle.phase is Phase.PLAYING and not self._warned and pids
+            self._step_ready(pids)
+        elif self.cycle.phase is Phase.BLOCKED:
+            self._step_blocked(pids)
+        elif (not self._warned and pids
               and self.cycle.remaining <= WARN_AT < self.cycle.play_seconds):
             self._warned = True
             self._notify("1 minute of play left", "Save your game.")
+
+    def _ui_wanted(self, pids) -> bool:
+        """Show the overlay only if it works and there is a game to resume."""
+        return self._overlay is not None and self._overlay.available and bool(pids)
+
+    def _hold(self, pids) -> None:
+        # Re-freeze every tick so games launched mid-block get caught too.
+        self._freeze(pids)
+        self._frozen |= pids
+
+    def _step_blocked(self, pids) -> None:
+        self._hold(pids)
+        if self._overlay is None:
+            return
+        if pids:
+            until = self._clock() + self.cycle.remaining + OVERLAY_MARGIN
+            self._overlay.show(until)
+            self._overlay.confirmed()  # Enter pressed early doesn't count
+        else:
+            self._overlay.hide()  # game quit: don't blank the desktop for nothing
+
+    def _step_ready(self, pids) -> None:
+        if self._ui_wanted(pids):
+            self._hold(pids)
+            self._overlay.show(self._clock())
+            if not self._overlay.confirmed() and self._overlay.available:
+                return  # keep waiting for Enter
+        self.resume()  # confirmed, or there is nothing (or no way) to wait on
 
     def resume(self) -> None:
         """End a finished block: thaw the games and start a new play cycle."""
@@ -58,7 +89,9 @@ class Daemon:
             self._notify("Block over", "Games resumed. Have fun!")
 
     def release(self) -> None:
-        """Thaw everything we froze. Must run on every exit path."""
+        """Thaw everything we froze and drop the overlay. Runs on every exit path."""
+        if self._overlay is not None:
+            self._overlay.hide()
         self._thaw(self._frozen)
         self._frozen.clear()
 
