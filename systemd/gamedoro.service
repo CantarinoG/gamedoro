@@ -1,0 +1,13 @@
+[Unit]
+Description=gamedoro - gamified pomodoro for Steam games
+
+[Service]
+# Adjust the path and the --play/--block minutes to taste.
+WorkingDirectory=%h/Workspace/gamedoro
+ExecStart=/usr/bin/python3 -m gamedoro --play 50 --block 10
+Restart=always
+# Give the daemon time to thaw games on shutdown.
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
