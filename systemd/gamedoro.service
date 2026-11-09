@@ -2,6 +2,7 @@
 Description=gamedoro - gamified pomodoro for Steam games
 
 [Service]
+# The overlay needs WAYLAND_DISPLAY; see the README for importing it from sway.
 # Adjust the path and the --play/--block/--first-bonus minutes to taste.
 WorkingDirectory=%h/Workspace/gamedoro
 ExecStart=/usr/bin/python3 -m gamedoro --play 50 --block 10 --first-bonus 10
