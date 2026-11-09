@@ -32,7 +32,8 @@ class Daemon:
     def __init__(self, cycle: Cycle, find=games.find_game_pids,
                  freeze=freezer.freeze, thaw=freezer.thaw, notify=notify,
                  state_path: Path | None = None, overlay=None,
-                 clock=time.time, locate=None, watcher=None):
+                 clock=time.time, locate=None, watcher=None,
+                 launch_bonus_seconds: float = 0.0):
         """`overlay` is optional; without one, blocks end by themselves.
 
         `locate(pids, app_ids)` returns the screens currently showing the game
@@ -40,12 +41,18 @@ class Daemon:
         in which case the overlay covers every screen.
 
         `watcher` (a config.Watcher) is polled to pick up edited settings.
+
+        Each time a game launches (none was running before), the play budget is
+        topped up by `launch_bonus_seconds`, since loading isn't play time. A
+        game that is already running when the daemon starts doesn't count.
         """
         self.cycle = cycle
         self.state_path = state_path
         self._find, self._freeze, self._thaw, self._notify = find, freeze, thaw, notify
         self._overlay, self._clock, self._locate = overlay, clock, locate
         self._watcher = watcher
+        self.launch_bonus_seconds = launch_bonus_seconds
+        self._had_game: bool | None = None  # None until the first look
         self._frozen: set[int] = set()
         self._warned = False
         self._warned_overlay = False
@@ -55,6 +62,10 @@ class Daemon:
         groups = self._find()
         pids = {pid for group in groups.values() for pid in group}
         self._app_ids = set(groups)
+        launched = self._had_game is False and bool(pids)
+        self._had_game = bool(pids)
+        if launched and self.launch_bonus_seconds:
+            self.cycle.launch_bonus(self.launch_bonus_seconds)
         changed = self.cycle.tick(dt, game_running=bool(pids))
 
         if changed is Phase.BLOCKED:
@@ -130,6 +141,7 @@ class Daemon:
         elif new is not None:
             self.cycle.play_seconds = new.play * 60
             self.cycle.block_seconds = new.block * 60
+            self.launch_bonus_seconds = new.first_bonus * 60
             self._notify("gamedoro: settings reloaded",
                          f"play {new.play:g} min, block {new.block:g} min "
                          "(from the next cycle)")

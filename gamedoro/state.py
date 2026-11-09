@@ -25,14 +25,14 @@ def save(cycle: Cycle, path: Path, now: float | None = None) -> None:
 
 
 def load(play_seconds: float, block_seconds: float, path: Path,
-         now: float | None = None, first_bonus_seconds: float = 0.0) -> Cycle:
+         now: float | None = None, launch_bonus_seconds: float = 0.0) -> Cycle:
     """Restore a cycle, or start fresh if there is no usable saved state.
 
     A running block keeps counting down in wall-clock time while the daemon is
-    off, so restarting it is not a way out. Play budget is restored as-is; the
-    first-cycle bonus only applies when there is no saved state to restore.
+    off, so restarting it is not a way out. Play budget is restored as-is (it may
+    legitimately be up to play + launch bonus, if a game was launched).
     """
-    cycle = Cycle(play_seconds, block_seconds, first_bonus_seconds=first_bonus_seconds)
+    cycle = Cycle(play_seconds, block_seconds)
     try:
         data = json.loads(path.read_text())
         phase, remaining = Phase(data["phase"]), float(data["remaining"])
@@ -45,6 +45,6 @@ def load(play_seconds: float, block_seconds: float, path: Path,
             cycle.phase, cycle.remaining = Phase.BLOCKED, min(remaining, block_seconds)
     elif phase is Phase.READY:
         cycle.phase, cycle.remaining = Phase.READY, 0.0
-    elif 0 < remaining <= play_seconds + first_bonus_seconds:
+    elif 0 < remaining <= play_seconds + launch_bonus_seconds:
         cycle.remaining = remaining
     return cycle

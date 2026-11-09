@@ -23,12 +23,10 @@ class Cycle:
     # Remaining play budget while PLAYING, remaining block time while BLOCKED
     # (0 while READY).
     remaining: float = 0.0
-    # Extra play time for the first cycle only (games take a while to load).
-    first_bonus_seconds: float = 0.0
 
     def __post_init__(self):
         if self.remaining == 0.0:
-            self.remaining = self.play_seconds + self.first_bonus_seconds
+            self.remaining = self.play_seconds
 
     def tick(self, dt: float, game_running: bool) -> Phase | None:
         """Advance by dt seconds. Returns the new phase if it changed."""
@@ -48,6 +46,18 @@ class Cycle:
                 self.remaining = 0.0
                 return self.phase
         return None  # READY just waits for resume()
+
+    def launch_bonus(self, seconds: float) -> float:
+        """Top up the play budget by `seconds` because a game just launched
+        (loading screens aren't play time). Capped at play_seconds + seconds,
+        so repeated launches can't stack up more than one bonus. Only applies
+        while PLAYING. Returns the seconds actually added."""
+        if self.phase is not Phase.PLAYING:
+            return 0.0
+        topped_up = min(self.remaining + seconds, self.play_seconds + seconds)
+        added = max(0.0, topped_up - self.remaining)
+        self.remaining += added
+        return added
 
     def resume(self) -> bool:
         """Leave READY and start a fresh play budget. False if not READY."""

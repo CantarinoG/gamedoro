@@ -44,9 +44,10 @@ def main() -> None:
 
     path = state.default_path()
     cycle = state.load(settings.play * 60, settings.block * 60, path,
-                       first_bonus_seconds=settings.first_bonus * 60)
+                       launch_bonus_seconds=settings.first_bonus * 60)
     Daemon(cycle, state_path=path, overlay=overlay, locate=sway.query_game_areas,
-           watcher=config.Watcher(args.config, overrides)).run()
+           watcher=config.Watcher(args.config, overrides),
+           launch_bonus_seconds=settings.first_bonus * 60).run()
 
 
 if __name__ == "__main__":

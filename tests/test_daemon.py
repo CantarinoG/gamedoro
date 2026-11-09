@@ -26,7 +26,7 @@ class FakeOverlay:
 
 
 class Harness:
-    def __init__(self, play=10, block=5, overlay=None, locate=None):
+    def __init__(self, play=10, block=5, overlay=None, locate=None, bonus=0.0):
         self.pids = {"1": [100, 101]}
         self.frozen, self.thawed, self.notes = [], [], []
         self.daemon = Daemon(
@@ -38,6 +38,7 @@ class Harness:
             overlay=overlay,
             clock=lambda: 1000.0,
             locate=locate,
+            launch_bonus_seconds=bonus,
         )
 
 
@@ -199,6 +200,58 @@ class OverlayTest(unittest.TestCase):
         h, o = self.blocked()
         h.daemon.release()
         self.assertEqual(o.hidden, 1)
+
+
+class LaunchBonusTest(unittest.TestCase):
+    def test_launching_a_game_adds_the_bonus(self):
+        h = Harness(play=100, bonus=30)
+        h.pids = {}
+        h.daemon.step(1)  # no game yet
+        h.pids = {"1": [100]}
+        h.daemon.step(1)  # launch: +30, then 1s of play drains
+        self.assertEqual(h.daemon.cycle.remaining, 100 + 30 - 1)
+
+    def test_a_game_already_running_at_startup_is_not_a_launch(self):
+        h = Harness(play=100, bonus=30)
+        h.daemon.step(1)  # the very first look already sees a game
+        self.assertEqual(h.daemon.cycle.remaining, 99)
+
+    def test_staying_in_the_game_gives_no_more_bonus(self):
+        h = Harness(play=100, bonus=30)
+        h.pids = {}
+        h.daemon.step(1)
+        h.pids = {"1": [100]}
+        for _ in range(3):
+            h.daemon.step(1)
+        self.assertEqual(h.daemon.cycle.remaining, 130 - 3)
+
+    def test_every_new_launch_tops_up_but_never_beyond_the_cap(self):
+        h = Harness(play=100, bonus=30)
+        for launch in range(3):
+            h.pids = {}
+            h.daemon.step(1)
+            h.pids = {"1": [100]}
+            h.daemon.step(1)
+            self.assertLessEqual(h.daemon.cycle.remaining, 130)
+        self.assertGreater(h.daemon.cycle.remaining, 100)  # topped up again
+
+    def test_no_bonus_for_a_game_launched_during_a_block(self):
+        h = Harness(play=1, block=60, bonus=30)
+        h.daemon.step(1)  # BLOCKED
+        h.pids = {}
+        h.daemon.step(1)
+        h.pids = {"2": [200]}
+        h.daemon.step(1)
+        self.assertEqual(h.daemon.cycle.phase, Phase.BLOCKED)
+        self.assertEqual(h.daemon.cycle.remaining, 58)  # block time, untouched
+
+    def test_zero_bonus_changes_nothing(self):
+        h = Harness(play=100, bonus=0)
+        h.pids = {}
+        h.daemon.step(1)
+        h.pids = {"1": [100]}
+        h.daemon.step(1)
+        self.assertEqual(h.daemon.cycle.remaining, 99)
 
 
 class FakeWatcher:

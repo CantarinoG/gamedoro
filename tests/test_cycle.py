@@ -49,18 +49,32 @@ class CycleTest(unittest.TestCase):
         c.tick(3600, True)  # e.g. laptop resumed from suspend
         self.assertEqual(c.remaining, 95)
 
-    def test_first_cycle_gets_a_bonus_later_ones_do_not(self):
-        c = Cycle(play_seconds=4, block_seconds=2, first_bonus_seconds=3)
-        self.assertEqual(c.remaining, 7)
-        c.tick(5, True)
-        c.tick(2, True)
-        self.assertEqual(c.phase, Phase.BLOCKED)
-        c.tick(2, False)
-        c.resume()
-        self.assertEqual((c.phase, c.remaining), (Phase.PLAYING, 4))
+    def test_launch_bonus_tops_up_the_budget(self):
+        c = Cycle(play_seconds=60, block_seconds=5)
+        c.remaining = 20
+        self.assertEqual(c.launch_bonus(10), 10)
+        self.assertEqual(c.remaining, 30)
+
+    def test_launch_bonus_is_capped_at_play_plus_bonus(self):
+        c = Cycle(play_seconds=60, block_seconds=5)
+        self.assertEqual(c.launch_bonus(10), 10)  # fresh budget: 60 -> 70
+        self.assertEqual(c.remaining, 70)
+        self.assertEqual(c.launch_bonus(10), 0)   # relaunching can't stack
+        c.remaining = 65
+        self.assertEqual(c.launch_bonus(10), 5)   # only up to the cap
+        self.assertEqual(c.remaining, 70)
+
+    def test_launch_bonus_only_applies_while_playing(self):
+        c = Cycle(play_seconds=4, block_seconds=2)
+        c.tick(4, True)  # BLOCKED
+        self.assertEqual(c.launch_bonus(10), 0)
+        self.assertEqual(c.remaining, 2)
+        c.tick(2, False)  # READY
+        self.assertEqual(c.launch_bonus(10), 0)
 
     def test_bonus_is_not_spent_while_no_game_runs(self):
-        c = Cycle(play_seconds=4, block_seconds=2, first_bonus_seconds=3)
+        c = Cycle(play_seconds=4, block_seconds=2)
+        c.launch_bonus(3)
         c.tick(5, False)
         self.assertEqual(c.remaining, 7)
 
