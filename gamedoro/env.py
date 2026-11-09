@@ -12,18 +12,23 @@ from pathlib import Path
 def session_env(base=None, runtime_dir: Path | None = None) -> dict:
     """A copy of the environment with WAYLAND_DISPLAY / SWAYSOCK filled in.
 
-    Anything already set is left alone. Looked up on every call, so a sway
-    restart (new sockets) is picked up.
+    Values that are set and still point at a live socket are left alone. A
+    stale one (SWAYSOCK includes sway's pid, so it goes bad when sway restarts)
+    is replaced. Looked up on every call, so a restart is picked up.
     """
     env = dict(os.environ if base is None else base)
     runtime = runtime_dir or Path(env.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
     env.setdefault("XDG_RUNTIME_DIR", str(runtime))
-    if not env.get("WAYLAND_DISPLAY"):
+    wayland = env.get("WAYLAND_DISPLAY")
+    if not wayland or not (Path(wayland) if os.path.isabs(wayland) else runtime / wayland).exists():
         sockets = sorted(p.name for p in runtime.glob("wayland-*")
                          if not p.name.endswith(".lock"))
         if sockets:
             env["WAYLAND_DISPLAY"] = sockets[0]
-    if not env.get("SWAYSOCK"):
+        elif not wayland:
+            env.pop("WAYLAND_DISPLAY", None)
+    swaysock = env.get("SWAYSOCK")
+    if not swaysock or not Path(swaysock).exists():
         # Newest first: a restarted sway leaves a fresh socket.
         socks = sorted(runtime.glob("sway-ipc.*.sock"),
                        key=lambda p: p.stat().st_mtime, reverse=True)
