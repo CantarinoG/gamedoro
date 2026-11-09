@@ -2,12 +2,16 @@
 Description=gamedoro - gamified pomodoro for Steam games
 
 [Service]
-# The overlay needs WAYLAND_DISPLAY; see the README for importing it from sway.
-# Adjust the path and the --play/--block/--first-bonus minutes to taste.
-WorkingDirectory=%h/Workspace/gamedoro
-ExecStart=/usr/bin/python3 -m gamedoro --play 50 --block 10 --first-bonus 10
-Restart=always
-# Give the daemon time to thaw games on shutdown.
+# The two paths below are filled in by install.sh.
+WorkingDirectory=@REPO@
+ExecStart=@PYTHON@ -m gamedoro
+Environment=PYTHONUNBUFFERED=1
+# Restart if it crashes, but not after a config error (exit status 2): that
+# needs fixing, and would otherwise restart in a loop. See: journalctl --user -u gamedoro
+Restart=on-failure
+RestartPreventExitStatus=2
+RestartSec=3
+# On stop, systemd sends SIGTERM and the daemon thaws games before exiting.
 TimeoutStopSec=10
 
 [Install]

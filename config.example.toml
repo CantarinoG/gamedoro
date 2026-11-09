@@ -1,4 +1,4 @@
-# Copy to ~/.config/gamedoro/config.toml
+# gamedoro settings: ~/.config/gamedoro/config.toml (install.sh creates it from this)
 # Command-line flags override these. Edits are picked up while gamedoro runs
 # and apply from the next cycle (the overlay setting needs a restart).
 
