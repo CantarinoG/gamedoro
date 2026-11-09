@@ -7,7 +7,24 @@ from pathlib import Path
 from . import config, state, sway
 from .daemon import Daemon
 from .overlay import Overlay
-from .overlay_ui import supported
+from .overlay_ui import bindings_available
+
+
+def build_overlay(enabled: bool, check=bindings_available):
+    """The overlay manager, or None if disabled or its bindings are missing.
+
+    Deliberately does NOT test for a live compositor: started as a service at
+    login, the display may not exist yet, and giving up then would disable the
+    overlay for good. The overlay process checks when it actually launches.
+    """
+    if not enabled:
+        return None
+    ok, reason = check()
+    if not ok:
+        print(f"gamedoro: warning: overlay unavailable ({reason}); blocks will "
+              "end without waiting for Enter", file=sys.stderr)
+        return None
+    return Overlay()
 
 
 def main() -> None:
@@ -34,14 +51,7 @@ def main() -> None:
     except config.ConfigError as e:
         ap.error(str(e))
 
-    overlay = None
-    if settings.overlay:
-        ok, reason = supported()
-        if ok:
-            overlay = Overlay()
-        else:
-            print(f"gamedoro: warning: overlay unavailable ({reason}); blocks will "
-                  "end without waiting for Enter", file=sys.stderr)
+    overlay = build_overlay(settings.overlay)
 
     path = state.default_path()
     cycle = state.load(settings.play * 60, settings.block * 60, path,

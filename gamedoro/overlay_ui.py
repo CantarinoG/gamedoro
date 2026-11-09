@@ -41,16 +41,30 @@ def texts(remaining: float) -> tuple[str, str, str]:
     return "Break's over", clock(0), "Press Enter to resume your game."
 
 
-def supported() -> tuple[bool, str]:
-    """Can this Python show the overlay? Returns (ok, reason if not)."""
+def bindings_available() -> tuple[bool, str]:
+    """Are the GTK + layer-shell Python bindings installed? Returns (ok, reason).
+
+    This is the part that can't change while we run. Whether the compositor
+    supports layer-shell is checked by the overlay process itself each time it
+    launches, because at login the display may not exist yet.
+    """
     try:
         import gi
         gi.require_version("Gtk", "3.0")
         gi.require_version("GtkLayerShell", "0.1")
-        from gi.repository import GtkLayerShell
+        from gi.repository import GtkLayerShell  # noqa: F401
     except (ImportError, ValueError) as e:
         return False, (f"{e}. On Debian/Ubuntu: "
                        "sudo apt install gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1")
+    return True, ""
+
+
+def supported() -> tuple[bool, str]:
+    """Can this process show the overlay right now? (bindings + live compositor)"""
+    ok, reason = bindings_available()
+    if not ok:
+        return ok, reason
+    from gi.repository import GtkLayerShell
     if not GtkLayerShell.is_supported():
         return False, "compositor doesn't support wlr-layer-shell"
     return True, ""
