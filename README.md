@@ -22,8 +22,12 @@ notifications if present.
 - When the budget is spent, all game processes are frozen for the block.
   Games launched during a block are frozen too.
 - A fullscreen overlay shows the countdown. When it hits zero the game stays
-  frozen until you press **Enter** on the overlay. If you quit the game
-  mid-block the overlay goes away (the block timer keeps running).
+  frozen until you press **Enter** on the overlay.
+- The overlay only covers the screen where the frozen game is visible. Switch
+  to another workspace and it disappears, so you can keep using your PC; switch
+  back and it returns. It doesn't take the keyboard during the countdown, only
+  once it's asking for Enter. If you quit the game mid-block the overlay goes
+  away too (the block timer keeps running).
 - `--no-overlay` skips the overlay and the Enter step: blocks just end.
 - Stopping the daemon (Ctrl-C / SIGTERM) thaws everything it froze.
 - State lives in `~/.local/state/gamedoro/state.json`. A block keeps counting
@@ -50,6 +54,7 @@ your sway config so it is imported before the service starts:
 | `freezer.py` | `SIGSTOP` / `SIGCONT` |
 | `state.py` | Save/restore across restarts |
 | `overlay.py` | Launches/respawns the overlay process, reads the Enter confirmation |
+| `sway.py` | Asks sway which screens currently show a game window |
 | `overlay_ui.py` | The GTK layer-shell countdown screen (runs as a subprocess) |
 | `daemon.py` | Glues it together, 1s loop |
 
