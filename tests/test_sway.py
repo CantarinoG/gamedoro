@@ -46,6 +46,18 @@ class GameAreasTest(unittest.TestCase):
 
 
 class QueryTest(unittest.TestCase):
+    def test_runs_swaymsg_with_a_session_environment(self):
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen.update(kw)
+            class R:
+                stdout = b'{"type": "root", "nodes": []}'
+            return R
+
+        self.assertEqual(query_game_areas({1}, set(), run=fake_run), set())
+        self.assertIn("XDG_RUNTIME_DIR", seen["env"])
+
     def test_returns_none_when_sway_is_unavailable(self):
         def boom(*a, **k):
             raise FileNotFoundError("swaymsg")

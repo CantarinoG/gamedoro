@@ -7,6 +7,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from .env import session_env
+
 UI_SCRIPT = Path(__file__).with_name("overlay_ui.py")
 # An overlay that dies this soon after launch never really appeared (e.g. no
 # Wayland display). After MAX_QUICK_DEATHS in a row we stop trying.
@@ -62,7 +64,7 @@ class Overlay:
         for x, y, w, h in sorted(areas or ()):
             cmd += ["--area", f"{x},{y},{w},{h}"]
         try:
-            self._proc = self._spawn(cmd, stdin=subprocess.DEVNULL)
+            self._proc = self._spawn(cmd, stdin=subprocess.DEVNULL, env=session_env())
         except OSError:
             self.available = False
 

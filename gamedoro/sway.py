@@ -7,6 +7,8 @@ would stay up after you switch away from the frozen game.
 import json
 import subprocess
 
+from .env import session_env
+
 Area = tuple[int, int, int, int]  # x, y, width, height of an output
 
 
@@ -42,7 +44,7 @@ def query_game_areas(pids: set[int], app_ids: set[str],
     """game_areas() for the live sway, or None if sway can't be asked."""
     try:
         out = run(["swaymsg", "-t", "get_tree"], capture_output=True,
-                  timeout=2, check=True).stdout
+                  timeout=2, check=True, env=session_env()).stdout
         return game_areas(json.loads(out), pids, app_ids)
     except (OSError, subprocess.SubprocessError, ValueError, KeyError):
         return None

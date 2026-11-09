@@ -32,6 +32,7 @@ class OverlayTest(unittest.TestCase):
 
         def spawn(cmd, **kw):
             p = FakeProc(cmd)
+            p.kwargs = kw
             self.spawned.append(p)
             return p
 
@@ -130,6 +131,11 @@ class OverlayTest(unittest.TestCase):
         for i in range(5):
             self.overlay.show(1600, areas={(i, 0, 100, 100)})
         self.assertTrue(self.overlay.available)
+
+    def test_spawns_with_a_session_environment(self):
+        self.overlay.show(1600)
+        env = self.spawned[0].kwargs["env"]
+        self.assertIn("XDG_RUNTIME_DIR", env)  # filled in even when launched by systemd
 
 
 if __name__ == "__main__":
