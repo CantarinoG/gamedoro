@@ -9,8 +9,11 @@ notifications if present.
 
 ## Usage
 
-    python3 -m gamedoro --play 50 --block 10
+    python3 -m gamedoro --play 50 --block 10 --first-bonus 10
 
+- `--first-bonus` adds extra minutes to the **first** play cycle after the
+  daemon starts with no saved state, since games take a while to load
+  (default 10, `0` disables). Later cycles get exactly `--play`.
 - The play budget only drains **while a Steam game is running**.
 - A warning notification appears with 1 minute of play left.
 - When the budget is spent, all game processes are frozen for the block.
