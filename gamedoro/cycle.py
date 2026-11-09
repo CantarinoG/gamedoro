@@ -20,10 +20,12 @@ class Cycle:
     phase: Phase = Phase.PLAYING
     # Remaining play budget while PLAYING, remaining block time while BLOCKED.
     remaining: float = 0.0
+    # Extra play time for the first cycle only (games take a while to load).
+    first_bonus_seconds: float = 0.0
 
     def __post_init__(self):
         if self.remaining == 0.0:
-            self.remaining = self.play_seconds
+            self.remaining = self.play_seconds + self.first_bonus_seconds
 
     def tick(self, dt: float, game_running: bool) -> Phase | None:
         """Advance by dt seconds. Returns the new phase if it changed."""
