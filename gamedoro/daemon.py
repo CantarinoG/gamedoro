@@ -19,6 +19,10 @@ CONFIG_EVERY = 5.0  # seconds between config file checks
 OVERLAY_MARGIN = 1.5
 # While blocked we poll faster so the overlay follows workspace switches.
 FAST_INTERVAL = 0.5
+# A game's window can take a while to appear. Until it does we freeze nothing
+# (so helpers aren't stopped needlessly); after this long we give up waiting
+# and freeze the whole process tree instead.
+WINDOW_GRACE = 15.0
 
 
 def notify(title: str, body: str = "") -> None:
@@ -53,6 +57,8 @@ class Daemon:
         self._watcher = watcher
         self.launch_bonus_seconds = launch_bonus_seconds
         self._had_game: bool | None = None  # None until the first look
+        self._windowless = 0.0   # seconds a game has had no window yet
+        self._fell_back = False  # froze the whole tree while waiting for a window
         self._frozen: set[int] = set()
         self._warned = False
         self._warned_overlay = False
@@ -80,9 +86,9 @@ class Daemon:
             self._notify("Overlay unavailable", "Blocks will end without waiting for Enter.")
 
         if self.cycle.phase is Phase.READY:
-            self._step_ready(pids)
+            self._step_ready(pids, dt)
         elif self.cycle.phase is Phase.BLOCKED:
-            self._step_blocked(pids)
+            self._step_blocked(pids, dt)
         elif (not self._warned and pids
               and self.cycle.remaining <= WARN_AT < self.cycle.play_seconds):
             self._warned = True
@@ -92,33 +98,64 @@ class Daemon:
         """Show the overlay only if it works and there is a game to resume."""
         return self._overlay is not None and self._overlay.available and bool(pids)
 
-    def _hold(self, pids) -> None:
-        # Re-freeze every tick so games launched mid-block get caught too.
-        self._freeze(pids)
-        self._frozen |= pids
+    def _view(self, pids):
+        """What sway says about the game, or None if we can't ask."""
+        return self._locate(pids, self._app_ids) if self._locate else None
 
-    def _step_blocked(self, pids) -> None:
-        self._hold(pids)
+    def _targets(self, pids, view, dt: float) -> set[int]:
+        """The processes to freeze.
+
+        Just the one(s) owning the game's window, not the whole process tree:
+        a Proton game's tree includes helpers like Social Club's embedded
+        Chromium, whose watchdogs and network sessions don't survive a long
+        stall, leaving the game hung on resume. Without sway we can't tell, so
+        we freeze everything.
+        """
+        if view is None or not pids:
+            self._windowless = 0.0
+            return set(pids)
+        if view.window_pids:
+            self._windowless = 0.0
+            return set(view.window_pids)
+        self._windowless += dt
+        if self._windowless > WINDOW_GRACE:
+            self._fell_back = True
+            return set(pids)
+        return set()  # window not up yet; try again next tick
+
+    def _hold(self, targets: set[int]) -> None:
+        # Re-freeze every tick so games launched mid-block get caught too.
+        if self._fell_back and targets and targets < self._frozen:
+            # The window appeared after we froze everything: let the helpers go.
+            self._thaw(self._frozen - targets)
+            self._frozen &= targets
+            self._fell_back = False
+        self._freeze(targets)
+        self._frozen |= targets
+
+    def _step_blocked(self, pids, dt: float) -> None:
+        view = self._view(pids)
+        self._hold(self._targets(pids, view, dt))
         if self._overlay is None:
             return
         if pids:
             until = self._clock() + self.cycle.remaining + OVERLAY_MARGIN
-            self._show_overlay(pids, until)
+            self._show_overlay(view, until)
             self._overlay.confirmed()  # Enter pressed early doesn't count
         else:
             self._overlay.hide()  # game quit: don't blank the desktop for nothing
 
-    def _step_ready(self, pids) -> None:
+    def _step_ready(self, pids, dt: float) -> None:
         if self._ui_wanted(pids):
-            self._hold(pids)
-            self._show_overlay(pids, self._clock())
+            view = self._view(pids)
+            self._hold(self._targets(pids, view, dt))
+            self._show_overlay(view, self._clock())
             if not self._overlay.confirmed() and self._overlay.available:
                 return  # keep waiting for Enter
         self.resume()  # confirmed, or there is nothing (or no way) to wait on
 
-    def _show_overlay(self, pids, until: float) -> None:
+    def _show_overlay(self, view, until: float) -> None:
         """Cover the screen(s) showing the game; nothing if you're elsewhere."""
-        view = self._locate(pids, self._app_ids) if self._locate else None
         areas = None if view is None else view.areas
         if areas is not None and not areas:
             self._overlay.hide()  # game isn't on screen: leave the user alone

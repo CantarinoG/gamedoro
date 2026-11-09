@@ -256,6 +256,75 @@ class LaunchBonusTest(unittest.TestCase):
         self.assertEqual(h.daemon.cycle.remaining, 99)
 
 
+class SurgicalFreezeTest(unittest.TestCase):
+    """Freeze only the process owning the game window, not the whole tree."""
+
+    def make(self, view):
+        h = Harness(play=1, block=300, locate=lambda pids, app_ids: h.view)
+        h.pids = {"12210": [100, 101, 102]}  # 100 = game, others = helpers
+        h.view = view
+        return h
+
+    def test_freezes_only_the_window_owner(self):
+        h = self.make(GameView({(0, 0, 1920, 1080)}, {100}))
+        h.daemon.step(1)  # -> BLOCKED
+        h.daemon.step(1)
+        self.assertTrue(h.frozen)
+        for frozen in h.frozen:
+            self.assertEqual(frozen, {100})  # helpers never touched
+
+    def test_only_what_was_frozen_is_thawed(self):
+        h = self.make(GameView({(0, 0, 1920, 1080)}, {100}))
+        h.daemon.step(1)
+        h.daemon.release()
+        self.assertEqual(h.thawed, [{100}])
+
+    def test_freezes_everything_when_sway_cannot_be_asked(self):
+        h = self.make(None)
+        h.daemon.step(1)
+        h.daemon.step(1)
+        self.assertEqual(h.frozen[-1], {100, 101, 102})
+
+    def test_still_freezes_when_the_game_is_on_another_workspace(self):
+        h = self.make(GameView(set(), {100}))  # not on screen, but window known
+        h.daemon.step(1)
+        h.daemon.step(1)
+        self.assertEqual(h.frozen[-1], {100})
+
+    def test_waits_for_the_window_before_freezing_anything(self):
+        h = self.make(GameView(set(), set()))  # game running, no window yet
+        h.daemon.step(1)
+        h.daemon.step(5)
+        self.assertEqual(h.frozen[-1], set())
+
+    def test_gives_up_waiting_and_freezes_the_whole_tree(self):
+        h = self.make(GameView(set(), set()))
+        h.daemon.step(1)
+        for _ in range(4):  # 20s > WINDOW_GRACE
+            h.daemon.step(5)
+        self.assertEqual(h.frozen[-1], {100, 101, 102})
+
+    def test_helpers_are_released_once_the_window_appears(self):
+        h = self.make(GameView(set(), set()))
+        h.daemon.step(1)
+        for _ in range(4):
+            h.daemon.step(5)  # fell back to the whole tree
+        h.view = GameView({(0, 0, 1920, 1080)}, {100})
+        h.daemon.step(1)
+        self.assertEqual(h.thawed[-1], {101, 102})  # only the helpers
+        self.assertEqual(h.frozen[-1], {100})
+
+    def test_a_late_window_resets_the_wait(self):
+        h = self.make(GameView(set(), set()))
+        h.daemon.step(1)
+        h.daemon.step(10)
+        h.view = GameView(set(), {100})
+        h.daemon.step(1)
+        h.view = GameView(set(), set())
+        h.daemon.step(10)  # a fresh 10s, not 21s
+        self.assertEqual(h.frozen[-1], set())
+
+
 class FakeWatcher:
     def __init__(self):
         self.pending = (None, None)
