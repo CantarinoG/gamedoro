@@ -32,7 +32,8 @@ class ShutdownTest(unittest.TestCase):
         daemon = subprocess.Popen([sys.executable, "-c", SCRIPT.format(root=str(ROOT))],
                                   stdout=subprocess.PIPE, text=True)
         game = int(daemon.stdout.readline())
-        self.addCleanup(lambda: (os.kill(game, signal.SIGKILL), daemon.kill(), daemon.wait()))
+        self.addCleanup(lambda: (os.kill(game, signal.SIGKILL), daemon.kill(),
+                                 daemon.wait(), daemon.stdout.close()))
         for _ in range(50):  # wait for the freeze
             time.sleep(0.1)
             if state(game) == "T":
