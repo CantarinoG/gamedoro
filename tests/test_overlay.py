@@ -103,6 +103,34 @@ class OverlayTest(unittest.TestCase):
         self.overlay.show(1600)
         self.assertTrue(self.overlay.available)
 
+    def test_covers_only_the_requested_areas(self):
+        self.overlay.show(1600, areas={(1920, 0, 2560, 1440), (0, 0, 1920, 1080)})
+        cmd = self.spawned[0].cmd
+        areas = [cmd[i + 1] for i, a in enumerate(cmd) if a == "--area"]
+        self.assertEqual(areas, ["0,0,1920,1080", "1920,0,2560,1440"])
+
+    def test_no_areas_means_every_screen(self):
+        self.overlay.show(1600)
+        self.assertNotIn("--area", self.spawned[0].cmd)
+
+    def test_moves_to_the_new_screen_immediately_when_areas_change(self):
+        self.overlay.show(1600, areas={(0, 0, 1920, 1080)})
+        self.now += 0.1  # well inside the respawn throttle
+        self.overlay.show(1600, areas={(1920, 0, 1920, 1080)})
+        self.assertEqual(len(self.spawned), 2)
+        self.assertTrue(self.spawned[0].killed)
+        self.assertIn("1920,0,1920,1080", self.spawned[1].cmd)
+
+    def test_same_areas_do_not_restart(self):
+        self.overlay.show(1600, areas={(0, 0, 1920, 1080)})
+        self.overlay.show(1600, areas={(0, 0, 1920, 1080)})
+        self.assertEqual(len(self.spawned), 1)
+
+    def test_deliberate_restarts_do_not_count_as_failures(self):
+        for i in range(5):
+            self.overlay.show(1600, areas={(i, 0, 100, 100)})
+        self.assertTrue(self.overlay.available)
+
 
 if __name__ == "__main__":
     unittest.main()

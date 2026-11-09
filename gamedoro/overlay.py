@@ -28,6 +28,7 @@ class Overlay:
         self._proc = None
         self._last_spawn = float("-inf")
         self._quick_deaths = 0
+        self._areas = None  # areas the running overlay was started for
         # Turns False if the overlay can't be launched at all.
         self.available = True
 
@@ -35,20 +36,31 @@ class Overlay:
     def running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
 
-    def show(self, until: float) -> None:
+    def show(self, until: float, areas=None) -> None:
         """Make sure the overlay is up, counting down to `until` (epoch).
+
+        `areas` is a set of (x, y, w, h) screens to cover; None means all of
+        them. If it differs from what is currently showing, the overlay is
+        restarted on the new screens right away.
 
         If the user closes it, it is brought back (at most every retry_after
         seconds, so a broken overlay can't cause a spawn storm).
         """
         now = self._clock()
         self._account_for_exit(now)
+        areas = None if areas is None else frozenset(areas)
+        if self.running and areas != self._areas:
+            self.hide()
+            self._last_spawn = float("-inf")  # deliberate restart, not a failure
         if not self.available or self.running or now - self._last_spawn < self._retry_after:
             return
         self._last_spawn = now
+        self._areas = areas
         self.confirm_file.parent.mkdir(parents=True, exist_ok=True)
         cmd = [sys.executable, str(UI_SCRIPT),
                "--until", str(until), "--confirm-file", str(self.confirm_file)]
+        for x, y, w, h in sorted(areas or ()):
+            cmd += ["--area", f"{x},{y},{w},{h}"]
         try:
             self._proc = self._spawn(cmd, stdin=subprocess.DEVNULL)
         except OSError:
