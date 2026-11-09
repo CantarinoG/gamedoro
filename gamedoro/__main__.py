@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from . import state
+from . import state, sway
 from .daemon import Daemon
 from .overlay import Overlay
 from .overlay_ui import supported
@@ -35,7 +35,8 @@ def main() -> None:
     path = state.default_path()
     cycle = state.load(args.play * 60, args.block * 60, path,
                       first_bonus_seconds=args.first_bonus * 60)
-    Daemon(cycle, state_path=path, overlay=overlay).run()
+    Daemon(cycle, state_path=path, overlay=overlay,
+           locate=sway.query_game_areas).run()
 
 
 if __name__ == "__main__":

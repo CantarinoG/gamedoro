@@ -13,6 +13,8 @@ SAVE_EVERY = 10.0  # seconds between state saves
 # The overlay's clock runs a little past the daemon's, so that when it reads
 # 00:00 the daemon is already waiting for Enter.
 OVERLAY_MARGIN = 1.5
+# While blocked we poll faster so the overlay follows workspace switches.
+FAST_INTERVAL = 0.5
 
 
 def notify(title: str, body: str = "") -> None:
@@ -26,18 +28,26 @@ class Daemon:
     def __init__(self, cycle: Cycle, find=games.find_game_pids,
                  freeze=freezer.freeze, thaw=freezer.thaw, notify=notify,
                  state_path: Path | None = None, overlay=None,
-                 clock=time.time):
-        """`overlay` is optional; without one, blocks end by themselves."""
+                 clock=time.time, locate=None):
+        """`overlay` is optional; without one, blocks end by themselves.
+
+        `locate(pids, app_ids)` returns the screens currently showing the game
+        (an empty set if it's not on screen), or None if that can't be known,
+        in which case the overlay covers every screen.
+        """
         self.cycle = cycle
         self.state_path = state_path
         self._find, self._freeze, self._thaw, self._notify = find, freeze, thaw, notify
-        self._overlay, self._clock = overlay, clock
+        self._overlay, self._clock, self._locate = overlay, clock, locate
         self._frozen: set[int] = set()
         self._warned = False
         self._warned_overlay = False
+        self._app_ids: set[str] = set()
 
     def step(self, dt: float) -> None:
-        pids = {pid for group in self._find().values() for pid in group}
+        groups = self._find()
+        pids = {pid for group in groups.values() for pid in group}
+        self._app_ids = set(groups)
         changed = self.cycle.tick(dt, game_running=bool(pids))
 
         if changed is Phase.BLOCKED:
@@ -75,7 +85,7 @@ class Daemon:
             return
         if pids:
             until = self._clock() + self.cycle.remaining + OVERLAY_MARGIN
-            self._overlay.show(until)
+            self._show_overlay(pids, until)
             self._overlay.confirmed()  # Enter pressed early doesn't count
         else:
             self._overlay.hide()  # game quit: don't blank the desktop for nothing
@@ -83,10 +93,23 @@ class Daemon:
     def _step_ready(self, pids) -> None:
         if self._ui_wanted(pids):
             self._hold(pids)
-            self._overlay.show(self._clock())
+            self._show_overlay(pids, self._clock())
             if not self._overlay.confirmed() and self._overlay.available:
                 return  # keep waiting for Enter
         self.resume()  # confirmed, or there is nothing (or no way) to wait on
+
+    def _show_overlay(self, pids, until: float) -> None:
+        """Cover the screen(s) showing the game; nothing if you're elsewhere."""
+        areas = self._locate(pids, self._app_ids) if self._locate else None
+        if areas is not None and not areas:
+            self._overlay.hide()  # game isn't on screen: leave the user alone
+        else:
+            self._overlay.show(until, areas)
+
+    def interval(self, slow: float = 1.0) -> float:
+        """Seconds to sleep between steps."""
+        waiting = self.cycle.phase is not Phase.PLAYING and self._overlay is not None
+        return FAST_INTERVAL if waiting else slow
 
     def resume(self) -> None:
         """End a finished block: thaw the games and start a new play cycle."""
@@ -108,7 +131,7 @@ class Daemon:
             except OSError:
                 pass  # losing a save is better than crashing mid-block
 
-    def run(self, interval: float = 1.0) -> None:
+    def run(self) -> None:
         def stop(*_):
             raise SystemExit(0)
         signal.signal(signal.SIGTERM, stop)
@@ -119,7 +142,7 @@ class Daemon:
         last = last_save = time.monotonic()
         try:
             while True:
-                time.sleep(interval)
+                time.sleep(self.interval())
                 now = time.monotonic()
                 phase_before = self.cycle.phase
                 self.step(now - last)
