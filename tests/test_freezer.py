@@ -13,7 +13,7 @@ def state(pid: int) -> str:
 class FreezerTest(unittest.TestCase):
     def test_freeze_then_thaw(self):
         p = subprocess.Popen(["sleep", "30"])
-        self.addCleanup(p.kill)
+        self.addCleanup(lambda: (p.kill(), p.wait()))
         freeze([p.pid])
         time.sleep(0.1)
         self.assertEqual(state(p.pid), "T")
