@@ -9,8 +9,9 @@ import os
 from pathlib import Path
 
 
-def session_env(base=None, runtime_dir: Path | None = None) -> dict:
-    """A copy of the environment with WAYLAND_DISPLAY / SWAYSOCK filled in.
+def session_env(base=None, runtime_dir: Path | None = None,
+                x11_dir: Path = Path("/tmp/.X11-unix")) -> dict:
+    """A copy of the environment with WAYLAND_DISPLAY / SWAYSOCK / DISPLAY filled in.
 
     Values that are set and still point at a live socket are left alone. A
     stale one (SWAYSOCK includes sway's pid, so it goes bad when sway restarts)
@@ -34,4 +35,8 @@ def session_env(base=None, runtime_dir: Path | None = None) -> dict:
                        key=lambda p: p.stat().st_mtime, reverse=True)
         if socks:
             env["SWAYSOCK"] = str(socks[0])
+    if not env.get("DISPLAY"):
+        displays = sorted(p.name for p in x11_dir.glob("X[0-9]*"))
+        if displays:
+            env["DISPLAY"] = ":" + displays[0][1:]
     return env

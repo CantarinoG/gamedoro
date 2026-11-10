@@ -56,8 +56,22 @@ class SessionEnvTest(unittest.TestCase):
         new = self.touch("sway-ipc.1000.2.sock", mtime=2000)
         self.assertEqual(session_env({}, self.run_dir)["SWAYSOCK"], str(new))
 
+    def test_finds_the_xwayland_display(self):
+        x11 = self.run_dir / "x11"
+        x11.mkdir()
+        (x11 / "X1").touch()
+        (x11 / "X0").touch()
+        (x11 / "not-a-display").touch()
+        self.assertEqual(session_env({}, self.run_dir, x11)["DISPLAY"], ":0")
+
+    def test_existing_display_is_kept(self):
+        x11 = self.run_dir / "x11"
+        x11.mkdir()
+        (x11 / "X0").touch()
+        self.assertEqual(session_env({"DISPLAY": ":7"}, self.run_dir, x11)["DISPLAY"], ":7")
+
     def test_nothing_found_leaves_them_unset(self):
-        env = session_env({}, self.run_dir)
+        env = session_env({}, self.run_dir, self.run_dir / "none")
         self.assertNotIn("WAYLAND_DISPLAY", env)
         self.assertNotIn("SWAYSOCK", env)
 
