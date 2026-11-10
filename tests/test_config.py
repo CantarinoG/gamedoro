@@ -80,6 +80,16 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             resolve(self.path)
 
+    def test_freeze_defaults_on_and_can_be_turned_off(self):
+        self.assertTrue(resolve(self.path).freeze)
+        self.write("freeze = false\n")
+        self.assertFalse(resolve(self.path).freeze)
+
+    def test_freeze_must_be_true_or_false(self):
+        self.write('freeze = "no"\n')
+        with self.assertRaises(ConfigError):
+            resolve(self.path)
+
     def test_unknown_key_is_rejected_by_name(self):
         self.write("plya = 30\n")
         with self.assertRaisesRegex(ConfigError, "plya"):

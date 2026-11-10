@@ -58,7 +58,7 @@ class Daemon:
                  launch_bonus_seconds: float = 0.0,
                  pulse_every: float = 0.0, pulse_for: float = 0.0,
                  sleep=time.sleep, pause_key: str = "", pause_wait: float = 0.0,
-                 press=None, log=log):
+                 press=None, log=log, freeze_games: bool = True):
         """`overlay` is optional; without one, blocks end by themselves.
 
         `locate(pids, app_ids)` returns a sway.GameView (the screens currently
@@ -79,6 +79,9 @@ class Daemon:
         Just before freezing, if the game window has the keyboard focus,
         `pause_key` is pressed in it (the game's own pause) and we wait
         `pause_wait` seconds, so the game isn't mid-action when it stops.
+
+        With `freeze_games` False nothing is ever stopped: a block is just the
+        overlay (and the pause key, if set), and the game runs on underneath.
         """
         self.cycle = cycle
         self.state_path = state_path
@@ -91,6 +94,7 @@ class Daemon:
         self.pause_key, self.pause_wait = pause_key, pause_wait
         self._press = press or self._press_key
         self._log = log
+        self.freeze_games = freeze_games
         self._had_game: bool | None = None  # None until the first look
         self._windowless = 0.0   # seconds a game has had no window yet
         self._fell_back = False  # froze the whole tree while waiting for a window
@@ -112,9 +116,12 @@ class Daemon:
         if changed is Phase.BLOCKED:
             self._warned = False
             self._log(f"block started ({self.cycle.block_seconds / 60:g} min), "
-                      f"game pids {sorted(pids)}")
+                      f"game pids {sorted(pids)}, "
+                      f"{'freezing' if self.freeze_games else 'overlay only, not freezing'}")
             self._pause_game(pids)
-            self._notify("Time's up!", f"Games frozen for {self.cycle.block_seconds / 60:g} min.")
+            minutes = f"{self.cycle.block_seconds / 60:g} min"
+            self._notify("Time's up!", f"Games frozen for {minutes}." if self.freeze_games
+                         else f"Take a {minutes} break.")
         elif changed is Phase.READY and self._ui_wanted(pids):
             self._notify("Block over", "Press Enter on the overlay to resume.")
 
@@ -162,6 +169,8 @@ class Daemon:
         return set()  # window not up yet; try again next tick
 
     def _hold(self, targets: set[int]) -> None:
+        if not self.freeze_games:
+            return
         # Re-freeze every tick so games launched mid-block get caught too.
         if self._fell_back and targets and targets < self._frozen:
             # The window appeared after we froze everything: let the helpers go.
@@ -274,6 +283,10 @@ class Daemon:
             self.launch_bonus_seconds = new.launch_bonus * 60
             self.pulse_every, self.pulse_for = new.pulse_every_seconds, new.pulse_for_seconds
             self.pause_key, self.pause_wait = new.pause_key, new.pause_wait_seconds
+            self.freeze_games = new.freeze
+            if not new.freeze:
+                self._thaw(self._frozen)  # turned off mid-block: let go of the game
+                self._frozen.clear()
             self._notify("gamedoro: settings reloaded",
                          f"play {new.play:g} min, block {new.block:g} min "
                          "(from the next cycle)")

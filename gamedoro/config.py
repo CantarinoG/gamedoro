@@ -16,6 +16,9 @@ class Settings:
     block: float = 10.0       # minutes games stay frozen
     launch_bonus: float = 10.0  # extra minutes whenever a game launches (loading)
     overlay: bool = True      # show the countdown / wait for Enter
+    # Stop the game (SIGSTOP) during a block. If false, only the overlay blocks
+    # you and the game keeps running underneath (you pause it yourself).
+    freeze: bool = True
     # While a game is frozen, thaw it for pulse_for_seconds every
     # pulse_every_seconds so no single stall is long (0 = never pulse).
     pulse_every_seconds: float = 30.0
@@ -42,6 +45,7 @@ class Settings:
 
 
 FIELDS = {"play": float, "block": float, "launch_bonus": float, "overlay": bool,
+          "freeze": bool,
           "pulse_every_seconds": float, "pulse_for_seconds": float,
           "pause_key": str, "pause_wait_seconds": float}
 # Old names still accepted in the config file. first_bonus used to be a one-off

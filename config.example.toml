@@ -16,6 +16,12 @@ launch_bonus = 10
 # Show the countdown overlay and wait for Enter. false = blocks just end.
 overlay = true
 
+# Stop the game (SIGSTOP) during a block. false = nothing is stopped: the
+# overlay (dark, but enough to see and pause the game) is the only thing
+# blocking you, and the game keeps running underneath. Stopping a game for
+# minutes can leave it hung when it resumes (GTA IV does).
+freeze = true
+
 # While a game is frozen it is thawed for pulse_for_seconds every
 # pulse_every_seconds, so no single stall gets long: a game stopped for
 # minutes sees its clock jump and can come back stuck. Costs a brief blip of

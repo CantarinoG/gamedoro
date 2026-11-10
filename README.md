@@ -23,6 +23,7 @@ notifications if present.
     block = 10        # minutes games stay frozen
     launch_bonus = 10 # extra minutes each time a game launches (loading screens)
     overlay = true    # countdown screen + wait for Enter; false = blocks just end
+    freeze = true     # stop the game during a block; false = overlay only
     pulse_every_seconds = 30  # thaw the frozen game briefly this often (0 = off)
     pulse_for_seconds = 1     # ...for this long   (note: seconds, not minutes)
     pause_key = "Escape"      # pressed in the game just before freezing it ("" = off)
@@ -63,7 +64,12 @@ restart-looping; fix the file and `systemctl --user start gamedoro`.
   It's capped at `play + launch_bonus`, so relaunching can't stack bonuses. A game
   already running when the daemon starts, or launched during a block, gets none.
 - A warning notification appears with 1 minute of play left.
-- When the budget is spent, the game is frozen for the block. Games launched
+- **Overlay only (`freeze = false`):** nothing is stopped. The overlay is a dark
+  layer you can only just see through (enough to pause the game yourself, not to
+  play), the Enter prompt still ends the block, and pulsing doesn't apply. The
+  pause key still works if set. Use this if freezing leaves a game hung.
+- When the budget is spent, the game is frozen for the block (unless
+  `freeze = false`). Games launched
   during a block are frozen too.
 - **Pause first:** when the block starts and the game window has the keyboard
   focus, gamedoro presses `pause_key` in it (default Escape) and waits

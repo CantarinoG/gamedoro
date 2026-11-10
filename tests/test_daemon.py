@@ -29,7 +29,7 @@ class FakeOverlay:
 class Harness:
     def __init__(self, play=10, block=5, overlay=None, locate=None, bonus=0.0,
                  pulse_every=0.0, pulse_for=0.0, pause_key="", pause_wait=0.0,
-                 press_ok=True):
+                 press_ok=True, freeze_games=True):
         self.pids = {"1": [100, 101]}
         self.frozen, self.thawed, self.notes = [], [], []
         self.events = []  # ordered ("freeze"|"thaw"|"sleep", detail)
@@ -51,6 +51,7 @@ class Harness:
             pause_wait=pause_wait,
             press=lambda key: (self.events.append(("press", key)), press_ok)[1],
             log=self.logs.append,
+            freeze_games=freeze_games,
         )
 
 
@@ -518,6 +519,79 @@ class PauseKeyTest(unittest.TestCase):
         h.daemon._watcher.pending = (Settings(pause_key="p", pause_wait_seconds=3), None)
         h.daemon.reload_config()
         self.assertEqual((h.daemon.pause_key, h.daemon.pause_wait), ("p", 3))
+
+
+class OverlayOnlyTest(unittest.TestCase):
+    """freeze = false: a block is just the overlay; the game keeps running."""
+
+    def make(self, **kw):
+        o = FakeOverlay()
+        h = Harness(play=1, block=3, overlay=o, freeze_games=False,
+                    locate=lambda pids, app_ids: GameView({(0, 0, 1920, 1080)}, set(pids), True),
+                    **kw)
+        return h, o
+
+    def test_nothing_is_ever_frozen_or_thawed(self):
+        h, o = self.make(pulse_every=1, pulse_for=0.5)
+        h.daemon.step(1)  # BLOCKED
+        for _ in range(3):
+            h.daemon.step(1)
+        o.enter_pressed = True
+        h.daemon.step(1)
+        self.assertTrue(all(not f for f in h.frozen))
+        self.assertTrue(all(not t for t in h.thawed))
+        self.assertNotIn("sleep", [e[0] for e in h.events])  # no pulses either
+
+    def test_the_overlay_still_runs_the_whole_block(self):
+        h, o = self.make()
+        h.daemon.step(1)
+        self.assertEqual(h.daemon.cycle.phase, Phase.BLOCKED)
+        self.assertEqual(len(o.shown), 1)
+        self.assertEqual(o.areas, [{(0, 0, 1920, 1080)}])
+        h.daemon.step(3)  # countdown over -> waiting for Enter
+        self.assertEqual(h.daemon.cycle.phase, Phase.READY)
+        h.daemon.step(1)
+        self.assertEqual(h.daemon.cycle.phase, Phase.READY)  # still waits for Enter
+        o.enter_pressed = True
+        h.daemon.step(1)
+        self.assertEqual(h.daemon.cycle.phase, Phase.PLAYING)
+
+    def test_the_pause_key_is_still_pressed(self):
+        h, o = self.make(pause_key="Escape", pause_wait=2)
+        h.daemon.step(1)
+        self.assertIn(("press", "Escape"), h.events)
+
+    def test_the_notification_does_not_claim_the_game_is_frozen(self):
+        h, o = self.make()
+        notes = []
+        h.daemon._notify = lambda title, body="": notes.append(body)
+        h.daemon.step(1)
+        self.assertTrue(any("break" in b for b in notes))
+        self.assertFalse(any("frozen" in b for b in notes))
+
+    def test_the_log_says_it_is_not_freezing(self):
+        h, o = self.make()
+        h.daemon.step(1)
+        self.assertTrue(any("not freezing" in line for line in h.logs))
+
+    def test_turning_freeze_off_mid_block_releases_the_game(self):
+        h = Harness(play=1, block=600, freeze_games=True)
+        h.daemon._watcher = FakeWatcher()
+        h.daemon.step(1)
+        self.assertEqual(h.frozen[-1], {100, 101})
+        h.daemon._watcher.pending = (Settings(freeze=False), None)
+        h.daemon.reload_config()
+        self.assertEqual(h.thawed[-1], {100, 101})
+        h.daemon.step(1)
+        self.assertEqual(h.frozen[-1], {100, 101})  # nothing new was frozen after
+
+    def test_turning_freeze_on_still_works(self):
+        h = Harness(play=1, block=600, freeze_games=False)
+        h.daemon._watcher = FakeWatcher()
+        h.daemon._watcher.pending = (Settings(freeze=True), None)
+        h.daemon.reload_config()
+        h.daemon.step(1)
+        self.assertTrue(h.frozen)
 
 
 class FakeWatcher:
