@@ -20,12 +20,18 @@ class Settings:
     # pulse_every_seconds so no single stall is long (0 = never pulse).
     pulse_every_seconds: float = 30.0
     pulse_for_seconds: float = 1.0
+    # Key pressed in the game (if it has focus) just before freezing it, to use
+    # the game's own pause. An X keysym name like "Escape"; "" turns it off.
+    pause_key: str = "Escape"
+    pause_wait_seconds: float = 1.5  # give the game this long to pause first
 
     def validate(self) -> "Settings":
         if self.play <= 0 or self.block <= 0:
             raise ConfigError("play and block must be positive")
         if self.launch_bonus < 0:
             raise ConfigError("launch_bonus can't be negative")
+        if self.pause_wait_seconds < 0:
+            raise ConfigError("pause_wait_seconds can't be negative")
         if self.pulse_every_seconds < 0:
             raise ConfigError("pulse_every_seconds can't be negative")
         if self.pulse_every_seconds > 0 and not (
@@ -36,7 +42,8 @@ class Settings:
 
 
 FIELDS = {"play": float, "block": float, "launch_bonus": float, "overlay": bool,
-          "pulse_every_seconds": float, "pulse_for_seconds": float}
+          "pulse_every_seconds": float, "pulse_for_seconds": float,
+          "pause_key": str, "pause_wait_seconds": float}
 # Old names still accepted in the config file. first_bonus used to be a one-off
 # bonus for the first cycle; it now means the same as launch_bonus.
 ALIASES = {"first_bonus": "launch_bonus"}
@@ -69,11 +76,13 @@ def read_file(path: Path) -> dict:
         kind = FIELDS[key]
         if kind is bool:
             ok = isinstance(value, bool)
+        elif kind is str:
+            ok = isinstance(value, str)
         else:  # numbers: accept ints too, but not bools
             ok = isinstance(value, (int, float)) and not isinstance(value, bool)
         if not ok:
             raise ConfigError(f"{path}: {key} must be a "
-                              f"{'true/false value' if kind is bool else 'number'}")
+                              f"{ {bool: 'true/false value', str: 'string'}.get(kind, 'number') }")
         values[key] = kind(value)
     return values
 

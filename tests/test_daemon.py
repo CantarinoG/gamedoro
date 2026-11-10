@@ -28,7 +28,8 @@ class FakeOverlay:
 
 class Harness:
     def __init__(self, play=10, block=5, overlay=None, locate=None, bonus=0.0,
-                 pulse_every=0.0, pulse_for=0.0):
+                 pulse_every=0.0, pulse_for=0.0, pause_key="", pause_wait=0.0,
+                 press_ok=True):
         self.pids = {"1": [100, 101]}
         self.frozen, self.thawed, self.notes = [], [], []
         self.events = []  # ordered ("freeze"|"thaw"|"sleep", detail)
@@ -45,6 +46,9 @@ class Harness:
             pulse_every=pulse_every,
             pulse_for=pulse_for,
             sleep=lambda secs: self.events.append(("sleep", secs)),
+            pause_key=pause_key,
+            pause_wait=pause_wait,
+            press=lambda key: (self.events.append(("press", key)), press_ok)[1],
         )
 
 
@@ -405,6 +409,78 @@ class PulseTest(unittest.TestCase):
         h.daemon._watcher.pending = (Settings(pulse_every_seconds=0), None)
         h.daemon.reload_config()
         self.assertEqual(h.daemon.pulse_every, 0)
+
+
+class PauseKeyTest(unittest.TestCase):
+    def harness(self, focused=True, view=True, **kw):
+        loc = (lambda pids, app_ids: GameView({(0, 0, 1920, 1080)}, set(pids), focused)
+               ) if view else (lambda pids, app_ids: None)
+        return Harness(play=1, block=600, locate=loc, pause_key="Escape",
+                       pause_wait=1.5, **kw)
+
+    def kinds(self, h):
+        return [e[0] for e in h.events]
+
+    def test_presses_the_key_then_waits_then_freezes(self):
+        h = self.harness()
+        h.daemon.step(1)  # play time over
+        self.assertEqual(h.events[:2], [("press", "Escape"), ("sleep", 1.5)])
+        self.assertLess(self.kinds(h).index("sleep"), self.kinds(h).index("freeze"))
+
+    def test_does_not_press_when_the_game_is_not_focused(self):
+        h = self.harness(focused=False)
+        h.daemon.step(1)
+        self.assertNotIn("press", self.kinds(h))
+        self.assertIn("freeze", self.kinds(h))  # still frozen, just not paused first
+
+    def test_does_not_press_when_sway_cannot_be_asked(self):
+        h = self.harness(view=False)
+        h.daemon.step(1)
+        self.assertNotIn("press", self.kinds(h))
+
+    def test_disabled_with_an_empty_key(self):
+        h = Harness(play=1, block=600, pause_key="", pause_wait=1.5,
+                    locate=lambda pids, app_ids: GameView(set(), set(pids), True))
+        h.daemon.step(1)
+        self.assertNotIn("press", self.kinds(h))
+
+    def test_no_wait_if_the_key_could_not_be_sent(self):
+        h = self.harness(press_ok=False)
+        h.daemon.step(1)
+        self.assertIn("press", self.kinds(h))
+        self.assertNotIn("sleep", self.kinds(h))
+        self.assertIn("freeze", self.kinds(h))
+
+    def test_only_once_per_block_not_every_tick(self):
+        h = self.harness()
+        for _ in range(5):
+            h.daemon.step(1)
+        self.assertEqual(self.kinds(h).count("press"), 1)
+
+    def test_a_game_launched_during_a_block_is_not_paused(self):
+        h = self.harness()
+        h.daemon.step(1)  # block starts with game 1 (paused, frozen)
+        h.pids = {}
+        h.daemon.step(1)  # it quits
+        h.events.clear()
+        h.pids = {"2": [200]}  # a different game launches mid-block
+        h.daemon.step(1)
+        self.assertNotIn("press", self.kinds(h))
+        self.assertIn("freeze", self.kinds(h))
+
+    def test_not_pressed_while_playing(self):
+        h = Harness(play=1000, pause_key="Escape", pause_wait=1.5,
+                    locate=lambda pids, app_ids: GameView(set(), set(pids), True))
+        for _ in range(5):
+            h.daemon.step(1)
+        self.assertNotIn("press", self.kinds(h))
+
+    def test_a_reload_changes_the_key(self):
+        h = self.harness()
+        h.daemon._watcher = FakeWatcher()
+        h.daemon._watcher.pending = (Settings(pause_key="p", pause_wait_seconds=3), None)
+        h.daemon.reload_config()
+        self.assertEqual((h.daemon.pause_key, h.daemon.pause_wait), ("p", 3))
 
 
 class FakeWatcher:

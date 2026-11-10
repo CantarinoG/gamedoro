@@ -5,8 +5,9 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import freezer, games, state
+from . import freezer, games, keys, state
 from .cycle import Cycle, Phase
+from .env import session_env
 
 # SIGHUP matters: closing the terminal the daemon runs in sends it, and dying
 # without thawing would leave the game frozen.
@@ -39,7 +40,8 @@ class Daemon:
                  clock=time.time, locate=None, watcher=None,
                  launch_bonus_seconds: float = 0.0,
                  pulse_every: float = 0.0, pulse_for: float = 0.0,
-                 sleep=time.sleep):
+                 sleep=time.sleep, pause_key: str = "", pause_wait: float = 0.0,
+                 press=None):
         """`overlay` is optional; without one, blocks end by themselves.
 
         `locate(pids, app_ids)` returns a sway.GameView (the screens currently
@@ -56,6 +58,10 @@ class Daemon:
         `pulse_every` seconds (0 = never). A game that is stopped for minutes
         sees its clock jump in one frame and can come back stuck; pulsing keeps
         every stall short.
+
+        Just before freezing, if the game window has the keyboard focus,
+        `pause_key` is pressed in it (the game's own pause) and we wait
+        `pause_wait` seconds, so the game isn't mid-action when it stops.
         """
         self.cycle = cycle
         self.state_path = state_path
@@ -65,6 +71,8 @@ class Daemon:
         self.launch_bonus_seconds = launch_bonus_seconds
         self.pulse_every, self.pulse_for, self._sleep = pulse_every, pulse_for, sleep
         self._since_pulse = 0.0
+        self.pause_key, self.pause_wait = pause_key, pause_wait
+        self._press = press or self._press_key
         self._had_game: bool | None = None  # None until the first look
         self._windowless = 0.0   # seconds a game has had no window yet
         self._fell_back = False  # froze the whole tree while waiting for a window
@@ -86,6 +94,7 @@ class Daemon:
         if changed is Phase.BLOCKED:
             self._warned = False
             self._notify("Time's up!", f"Games frozen for {self.cycle.block_seconds / 60:g} min.")
+            self._pause_game(pids)
         elif changed is Phase.READY and self._ui_wanted(pids):
             self._notify("Block over", "Press Enter on the overlay to resume.")
 
@@ -141,6 +150,25 @@ class Daemon:
             self._fell_back = False
         self._freeze(targets)
         self._frozen |= targets
+
+    @staticmethod
+    def _press_key(keysym: str) -> bool:
+        return keys.press_key(keysym, display=session_env().get("DISPLAY"))
+
+    def _pause_game(self, pids) -> None:
+        """Use the game's own pause before freezing it.
+
+        Only when its window has the keyboard focus: the key goes to whatever is
+        focused, so if you've switched away it must not be sent (and a game that
+        lost focus has usually paused itself anyway). Pause keys toggle, so a
+        game that is already paused would be resumed; that's the price of not
+        knowing the game's state.
+        """
+        if not self.pause_key or not pids:
+            return
+        view = self._view(pids)
+        if view is not None and view.focused and self._press(self.pause_key):
+            self._sleep(self.pause_wait)
 
     def _maybe_pulse(self, dt: float) -> None:
         """Briefly let the frozen game run, so no single stall gets long."""
@@ -205,6 +233,7 @@ class Daemon:
             self.cycle.block_seconds = new.block * 60
             self.launch_bonus_seconds = new.launch_bonus * 60
             self.pulse_every, self.pulse_for = new.pulse_every_seconds, new.pulse_for_seconds
+            self.pause_key, self.pause_wait = new.pause_key, new.pause_wait_seconds
             self._notify("gamedoro: settings reloaded",
                          f"play {new.play:g} min, block {new.block:g} min "
                          "(from the next cycle)")

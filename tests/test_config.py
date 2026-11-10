@@ -62,6 +62,24 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaises(ConfigError, msg=text):
                 resolve(self.path)
 
+    def test_pause_key_defaults_to_escape_and_can_change_or_be_disabled(self):
+        self.assertEqual(resolve(self.path).pause_key, "Escape")
+        self.write('pause_key = "p"\npause_wait_seconds = 3\n')
+        s = resolve(self.path)
+        self.assertEqual((s.pause_key, s.pause_wait_seconds), ("p", 3))
+        self.write('pause_key = ""\n')
+        self.assertEqual(resolve(self.path).pause_key, "")
+
+    def test_pause_key_must_be_a_string(self):
+        self.write("pause_key = 27\n")
+        with self.assertRaisesRegex(ConfigError, "string"):
+            resolve(self.path)
+
+    def test_negative_pause_wait_is_rejected(self):
+        self.write("pause_wait_seconds = -1\n")
+        with self.assertRaises(ConfigError):
+            resolve(self.path)
+
     def test_unknown_key_is_rejected_by_name(self):
         self.write("plya = 30\n")
         with self.assertRaisesRegex(ConfigError, "plya"):
