@@ -15,3 +15,11 @@ launch_bonus = 10
 
 # Show the countdown overlay and wait for Enter. false = blocks just end.
 overlay = true
+
+# While a game is frozen it is thawed for pulse_for_seconds every
+# pulse_every_seconds, so no single stall gets long: a game stopped for
+# minutes sees its clock jump and can come back stuck. Costs a brief blip of
+# game sound/frames each pulse. pulse_every_seconds = 0 turns this off.
+# (Seconds, unlike the settings above which are minutes.)
+pulse_every_seconds = 30
+pulse_for_seconds = 1

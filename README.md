@@ -23,6 +23,8 @@ notifications if present.
     block = 10        # minutes games stay frozen
     launch_bonus = 10 # extra minutes each time a game launches (loading screens)
     overlay = true    # countdown screen + wait for Enter; false = blocks just end
+    pulse_every_seconds = 30  # thaw the frozen game briefly this often (0 = off)
+    pulse_for_seconds = 1     # ...for this long   (note: seconds, not minutes)
 
 Precedence: built-in defaults < config file < command-line flags
 (`--play`, `--block`, `--launch-bonus`, `--no-overlay`, `--config FILE`).
@@ -61,6 +63,12 @@ restart-looping; fix the file and `systemctl --user start gamedoro`.
 - A warning notification appears with 1 minute of play left.
 - When the budget is spent, the game is frozen for the block. Games launched
   during a block are frozen too.
+- **Pulsing:** a game that is stopped for minutes sees its clock jump in a single
+  frame and can come back stuck (GTA IV did). So while it is frozen, in the block
+  or waiting at the Enter prompt, it's thawed for `pulse_for_seconds` (1 s) every
+  `pulse_every_seconds` (30 s), keeping every stall short. The cost is a brief
+  blip of game sound/frames each pulse (a pulse is 1 s of game time per 30 s of
+  block); set `pulse_every_seconds = 0` to disable it.
 - Only the process that owns the game's window is frozen, not its whole process
   tree. A Proton game's tree includes helpers (e.g. Rockstar Social Club's
   embedded Chromium) whose watchdogs and network sessions don't survive a long
