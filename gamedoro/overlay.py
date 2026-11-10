@@ -11,9 +11,15 @@ from .env import session_env
 
 UI_SCRIPT = Path(__file__).with_name("overlay_ui.py")
 # An overlay that dies this soon after launch never really appeared (e.g. no
-# Wayland display). After MAX_QUICK_DEATHS in a row we stop trying.
+# Wayland display). After MAX_QUICK_DEATHS in a row we pause for COOL_OFF
+# seconds, then try again: a hiccup must not switch the overlay off for good.
 QUICK_DEATH = 3.0
 MAX_QUICK_DEATHS = 3
+COOL_OFF = 30.0
+
+
+def log(message: str) -> None:
+    print(f"gamedoro: {message}", file=sys.stderr, flush=True)
 
 
 def default_confirm_file() -> Path:
@@ -30,6 +36,7 @@ class Overlay:
         self._proc = None
         self._last_spawn = float("-inf")
         self._quick_deaths = 0
+        self._cool_until = float("-inf")
         self._areas = None  # areas the running overlay was started for
         # Turns False if the overlay can't be launched at all.
         self.available = True
@@ -54,7 +61,8 @@ class Overlay:
         if self.running and areas != self._areas:
             self.hide()
             self._last_spawn = float("-inf")  # deliberate restart, not a failure
-        if not self.available or self.running or now - self._last_spawn < self._retry_after:
+        if (not self.available or self.running or now < self._cool_until
+                or now - self._last_spawn < self._retry_after):
             return
         self._last_spawn = now
         self._areas = areas
@@ -65,7 +73,9 @@ class Overlay:
             cmd += ["--area", f"{x},{y},{w},{h}"]
         try:
             self._proc = self._spawn(cmd, stdin=subprocess.DEVNULL, env=session_env())
-        except OSError:
+            log(f"overlay started (until {until:.0f}, areas {sorted(areas or [])})")
+        except OSError as error:
+            log(f"overlay can't be launched: {error}")
             self.available = False
 
     def _account_for_exit(self, now: float) -> None:
@@ -75,8 +85,11 @@ class Overlay:
         self._proc = None
         if now - self._last_spawn < QUICK_DEATH:
             self._quick_deaths += 1
+            log(f"overlay died right after starting ({self._quick_deaths}/{MAX_QUICK_DEATHS})")
             if self._quick_deaths >= MAX_QUICK_DEATHS:
-                self.available = False
+                log(f"overlay keeps dying, pausing {COOL_OFF:g}s before trying again")
+                self._quick_deaths = 0
+                self._cool_until = now + COOL_OFF
         else:
             self._quick_deaths = 0
 

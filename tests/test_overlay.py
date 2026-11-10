@@ -84,14 +84,17 @@ class OverlayTest(unittest.TestCase):
         self.assertTrue(self.overlay.confirmed())
         self.assertFalse(self.overlay.confirmed())
 
-    def test_overlay_that_keeps_dying_instantly_is_given_up_on(self):
+    def test_overlay_that_keeps_dying_instantly_is_paused_then_retried(self):
         for _ in range(3):
             self.overlay.show(1600)
             self.spawned[-1].alive = False  # died right away
             self.now += 2.5  # past the retry throttle, still a quick death
         self.overlay.show(1600)
-        self.assertFalse(self.overlay.available)
-        self.assertEqual(len(self.spawned), 3)
+        self.assertTrue(self.overlay.available)  # never switched off for good
+        self.assertEqual(len(self.spawned), 3)   # but paused for now
+        self.now += 31
+        self.overlay.show(1600)
+        self.assertEqual(len(self.spawned), 4)
 
     def test_overlay_that_lived_a_while_resets_the_count(self):
         for _ in range(2):
