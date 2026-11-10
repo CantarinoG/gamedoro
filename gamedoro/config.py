@@ -16,16 +16,27 @@ class Settings:
     block: float = 10.0       # minutes games stay frozen
     launch_bonus: float = 10.0  # extra minutes whenever a game launches (loading)
     overlay: bool = True      # show the countdown / wait for Enter
+    # While a game is frozen, thaw it for pulse_for_seconds every
+    # pulse_every_seconds so no single stall is long (0 = never pulse).
+    pulse_every_seconds: float = 30.0
+    pulse_for_seconds: float = 1.0
 
     def validate(self) -> "Settings":
         if self.play <= 0 or self.block <= 0:
             raise ConfigError("play and block must be positive")
         if self.launch_bonus < 0:
             raise ConfigError("launch_bonus can't be negative")
+        if self.pulse_every_seconds < 0:
+            raise ConfigError("pulse_every_seconds can't be negative")
+        if self.pulse_every_seconds > 0 and not (
+                0 < self.pulse_for_seconds < self.pulse_every_seconds):
+            raise ConfigError("pulse_for_seconds must be above 0 and below "
+                              "pulse_every_seconds (or set pulse_every_seconds = 0)")
         return self
 
 
-FIELDS = {"play": float, "block": float, "launch_bonus": float, "overlay": bool}
+FIELDS = {"play": float, "block": float, "launch_bonus": float, "overlay": bool,
+          "pulse_every_seconds": float, "pulse_for_seconds": float}
 # Old names still accepted in the config file. first_bonus used to be a one-off
 # bonus for the first cycle; it now means the same as launch_bonus.
 ALIASES = {"first_bonus": "launch_bonus"}

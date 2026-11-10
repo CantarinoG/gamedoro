@@ -37,7 +37,9 @@ class Daemon:
                  freeze=freezer.freeze, thaw=freezer.thaw, notify=notify,
                  state_path: Path | None = None, overlay=None,
                  clock=time.time, locate=None, watcher=None,
-                 launch_bonus_seconds: float = 0.0):
+                 launch_bonus_seconds: float = 0.0,
+                 pulse_every: float = 0.0, pulse_for: float = 0.0,
+                 sleep=time.sleep):
         """`overlay` is optional; without one, blocks end by themselves.
 
         `locate(pids, app_ids)` returns a sway.GameView (the screens currently
@@ -49,6 +51,11 @@ class Daemon:
         Each time a game launches (none was running before), the play budget is
         topped up by `launch_bonus_seconds`, since loading isn't play time. A
         game that is already running when the daemon starts doesn't count.
+
+        While frozen, the game is thawed for `pulse_for` seconds every
+        `pulse_every` seconds (0 = never). A game that is stopped for minutes
+        sees its clock jump in one frame and can come back stuck; pulsing keeps
+        every stall short.
         """
         self.cycle = cycle
         self.state_path = state_path
@@ -56,6 +63,8 @@ class Daemon:
         self._overlay, self._clock, self._locate = overlay, clock, locate
         self._watcher = watcher
         self.launch_bonus_seconds = launch_bonus_seconds
+        self.pulse_every, self.pulse_for, self._sleep = pulse_every, pulse_for, sleep
+        self._since_pulse = 0.0
         self._had_game: bool | None = None  # None until the first look
         self._windowless = 0.0   # seconds a game has had no window yet
         self._fell_back = False  # froze the whole tree while waiting for a window
@@ -133,9 +142,23 @@ class Daemon:
         self._freeze(targets)
         self._frozen |= targets
 
+    def _maybe_pulse(self, dt: float) -> None:
+        """Briefly let the frozen game run, so no single stall gets long."""
+        if not self.pulse_every or not self._frozen:
+            self._since_pulse = 0.0
+            return
+        self._since_pulse += dt
+        if self._since_pulse < self.pulse_every:
+            return
+        self._since_pulse = 0.0
+        self._thaw(self._frozen)
+        self._sleep(self.pulse_for)
+        self._freeze(self._frozen)
+
     def _step_blocked(self, pids, dt: float) -> None:
         view = self._view(pids)
         self._hold(self._targets(pids, view, dt))
+        self._maybe_pulse(dt)
         if self._overlay is None:
             return
         if pids:
@@ -149,6 +172,7 @@ class Daemon:
         if self._ui_wanted(pids):
             view = self._view(pids)
             self._hold(self._targets(pids, view, dt))
+            self._maybe_pulse(dt)
             self._show_overlay(view, self._clock())
             if not self._overlay.confirmed() and self._overlay.available:
                 return  # keep waiting for Enter
@@ -180,6 +204,7 @@ class Daemon:
             self.cycle.play_seconds = new.play * 60
             self.cycle.block_seconds = new.block * 60
             self.launch_bonus_seconds = new.launch_bonus * 60
+            self.pulse_every, self.pulse_for = new.pulse_every_seconds, new.pulse_for_seconds
             self._notify("gamedoro: settings reloaded",
                          f"play {new.play:g} min, block {new.block:g} min "
                          "(from the next cycle)")
@@ -196,6 +221,7 @@ class Daemon:
             self._overlay.hide()
         self._thaw(self._frozen)
         self._frozen.clear()
+        self._since_pulse = 0.0
 
     def save(self) -> None:
         if self.state_path is not None:

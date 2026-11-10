@@ -58,7 +58,9 @@ def main() -> None:
                        launch_bonus_seconds=settings.launch_bonus * 60)
     Daemon(cycle, state_path=path, overlay=overlay, locate=sway.query_game_view,
            watcher=config.Watcher(args.config, overrides),
-           launch_bonus_seconds=settings.launch_bonus * 60).run()
+           launch_bonus_seconds=settings.launch_bonus * 60,
+           pulse_every=settings.pulse_every_seconds,
+           pulse_for=settings.pulse_for_seconds).run()
 
 
 if __name__ == "__main__":

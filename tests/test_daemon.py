@@ -27,19 +27,24 @@ class FakeOverlay:
 
 
 class Harness:
-    def __init__(self, play=10, block=5, overlay=None, locate=None, bonus=0.0):
+    def __init__(self, play=10, block=5, overlay=None, locate=None, bonus=0.0,
+                 pulse_every=0.0, pulse_for=0.0):
         self.pids = {"1": [100, 101]}
         self.frozen, self.thawed, self.notes = [], [], []
+        self.events = []  # ordered ("freeze"|"thaw"|"sleep", detail)
         self.daemon = Daemon(
             Cycle(play, block),
             find=lambda: self.pids,
-            freeze=lambda p: self.frozen.append(set(p)),
-            thaw=lambda p: self.thawed.append(set(p)),
+            freeze=lambda p: (self.frozen.append(set(p)), self.events.append(("freeze", set(p)))),
+            thaw=lambda p: (self.thawed.append(set(p)), self.events.append(("thaw", set(p)))),
             notify=lambda title, body="": self.notes.append(title),
             overlay=overlay,
             clock=lambda: 1000.0,
             locate=locate,
             launch_bonus_seconds=bonus,
+            pulse_every=pulse_every,
+            pulse_for=pulse_for,
+            sleep=lambda secs: self.events.append(("sleep", secs)),
         )
 
 
@@ -323,6 +328,83 @@ class SurgicalFreezeTest(unittest.TestCase):
         h.view = GameView(set(), set())
         h.daemon.step(10)  # a fresh 10s, not 21s
         self.assertEqual(h.frozen[-1], set())
+
+
+class PulseTest(unittest.TestCase):
+    def blocked(self, **kw):
+        h = Harness(play=1, block=600, **kw)
+        h.daemon.step(1)  # -> BLOCKED, game frozen
+        h.events.clear()
+        return h
+
+    def test_thaws_briefly_then_refreezes_every_interval(self):
+        h = self.blocked(pulse_every=30, pulse_for=1)
+        for _ in range(5):
+            h.daemon.step(5)  # 25s: nothing yet
+        self.assertNotIn("sleep", [e[0] for e in h.events])
+        h.events.clear()
+        h.daemon.step(5)  # 30s: pulse
+        pulse = [e for e in h.events if e[0] in ("thaw", "sleep")]
+        self.assertEqual(pulse, [("thaw", {100, 101}), ("sleep", 1)])
+        kinds = [e[0] for e in h.events]
+        self.assertLess(kinds.index("sleep"), len(kinds) - 1)
+        self.assertEqual(h.events[-1][0], "freeze")  # always ends frozen
+        self.assertEqual(h.events[-1][1], {100, 101})
+
+    def test_pulses_repeat(self):
+        h = self.blocked(pulse_every=10, pulse_for=0.5)
+        for _ in range(6):
+            h.daemon.step(5)  # 30s
+        self.assertEqual([e for e in h.events if e[0] == "sleep"], [("sleep", 0.5)] * 3)
+
+    def test_zero_interval_never_pulses(self):
+        h = self.blocked(pulse_every=0, pulse_for=1)
+        for _ in range(20):
+            h.daemon.step(5)
+        self.assertNotIn("sleep", [e[0] for e in h.events])
+
+    def test_no_pulses_while_playing(self):
+        h = Harness(play=1000, pulse_every=5, pulse_for=1)
+        for _ in range(10):
+            h.daemon.step(5)
+        self.assertEqual(h.events, [])
+
+    def test_pulses_while_waiting_for_enter_too(self):
+        o = FakeOverlay()
+        h = Harness(play=1, block=2, overlay=o, pulse_every=10, pulse_for=1)
+        h.daemon.step(1)
+        h.daemon.step(2)  # READY: waiting for Enter
+        self.assertEqual(h.daemon.cycle.phase, Phase.READY)
+        h.events.clear()
+        for _ in range(3):
+            h.daemon.step(5)  # 15s at the prompt
+        self.assertIn(("sleep", 1), h.events)
+        self.assertEqual(h.daemon.cycle.phase, Phase.READY)  # still waiting
+
+    def test_the_timer_restarts_for_each_block(self):
+        h = Harness(play=1, block=600, pulse_every=30, pulse_for=1)
+        h.daemon.step(1)
+        h.daemon.step(20)  # 20s into the first block
+        h.daemon.release()  # block ended / shutdown
+        h.daemon.cycle.phase = Phase.BLOCKED
+        h.events.clear()
+        h.daemon.step(20)  # 20s into a fresh block: not 40s
+        self.assertNotIn("sleep", [e[0] for e in h.events])
+
+    def test_nothing_to_pulse_when_nothing_is_frozen(self):
+        h = Harness(play=1, block=600, pulse_every=5, pulse_for=1,
+                    locate=lambda pids, app_ids: GameView(set(), set()))  # no window yet
+        h.daemon.step(1)
+        h.events.clear()
+        h.daemon.step(6)
+        self.assertNotIn("sleep", [e[0] for e in h.events])
+
+    def test_a_reload_changes_the_pulse(self):
+        h = self.blocked(pulse_every=30, pulse_for=1)
+        h.daemon._watcher = FakeWatcher()
+        h.daemon._watcher.pending = (Settings(pulse_every_seconds=0), None)
+        h.daemon.reload_config()
+        self.assertEqual(h.daemon.pulse_every, 0)
 
 
 class FakeWatcher:

@@ -42,6 +42,26 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "not both"):
             resolve(self.path)
 
+    def test_pulse_defaults_and_overrides(self):
+        s = resolve(self.path)
+        self.assertEqual((s.pulse_every_seconds, s.pulse_for_seconds), (30, 1))
+        self.write("pulse_every_seconds = 45\npulse_for_seconds = 2\n")
+        s = resolve(self.path)
+        self.assertEqual((s.pulse_every_seconds, s.pulse_for_seconds), (45, 2))
+
+    def test_pulse_can_be_disabled(self):
+        self.write("pulse_every_seconds = 0\n")
+        self.assertEqual(resolve(self.path).pulse_every_seconds, 0)
+
+    def test_pulse_values_are_validated(self):
+        for text in ("pulse_every_seconds = -1\n",
+                     "pulse_for_seconds = 0\n",
+                     "pulse_every_seconds = 10\npulse_for_seconds = 10\n",
+                     "pulse_every_seconds = 10\npulse_for_seconds = 30\n"):
+            self.write(text)
+            with self.assertRaises(ConfigError, msg=text):
+                resolve(self.path)
+
     def test_unknown_key_is_rejected_by_name(self):
         self.write("plya = 30\n")
         with self.assertRaisesRegex(ConfigError, "plya"):
