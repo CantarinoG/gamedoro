@@ -23,3 +23,12 @@ overlay = true
 # (Seconds, unlike the settings above which are minutes.)
 pulse_every_seconds = 30
 pulse_for_seconds = 1
+
+# Just before freezing a game, if its window has the keyboard focus, gamedoro
+# presses this key in it so the game pauses itself first. An X keysym name,
+# e.g. "Escape" or "p"; "" turns it off. Pause keys usually toggle, so a game
+# that is already paused would be resumed. Not sent if the game isn't focused.
+pause_key = "Escape"
+# How long to wait after the key before freezing, for the game to react.
+pause_wait_seconds = 1.5
+

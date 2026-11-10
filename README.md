@@ -25,6 +25,8 @@ notifications if present.
     overlay = true    # countdown screen + wait for Enter; false = blocks just end
     pulse_every_seconds = 30  # thaw the frozen game briefly this often (0 = off)
     pulse_for_seconds = 1     # ...for this long   (note: seconds, not minutes)
+    pause_key = "Escape"      # pressed in the game just before freezing it ("" = off)
+    pause_wait_seconds = 1.5  # wait this long after the key, then freeze
 
 Precedence: built-in defaults < config file < command-line flags
 (`--play`, `--block`, `--launch-bonus`, `--no-overlay`, `--config FILE`).
@@ -63,6 +65,13 @@ restart-looping; fix the file and `systemctl --user start gamedoro`.
 - A warning notification appears with 1 minute of play left.
 - When the budget is spent, the game is frozen for the block. Games launched
   during a block are frozen too.
+- **Pause first:** when the block starts and the game window has the keyboard
+  focus, gamedoro presses `pause_key` in it (default Escape) and waits
+  `pause_wait_seconds`, so the game pauses itself before being stopped. It sends
+  the key via X11's XTEST extension (Proton games run under Xwayland). It is only
+  sent if sway says the game window is focused, since the key goes to whatever
+  has focus. Pause keys toggle, so a game that was **already paused** would be
+  resumed by it; set `pause_key = ""` to turn this off. One key for every game.
 - **Pulsing:** a game that is stopped for minutes sees its clock jump in a single
   frame and can come back stuck (GTA IV did). So while it is frozen, in the block
   or waiting at the Enter prompt, it's thawed for `pulse_for_seconds` (1 s) every
