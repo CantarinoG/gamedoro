@@ -3,8 +3,8 @@ import unittest
 from gamedoro.sway import GameView, game_view, query_game_view
 
 
-def win(pid, visible=True, cls=None, app_id=None, size=(1920, 1080)):
-    return {"type": "con", "pid": pid, "visible": visible, "nodes": [],
+def win(pid, visible=True, cls=None, app_id=None, size=(1920, 1080), focused=False):
+    return {"type": "con", "pid": pid, "visible": visible, "focused": focused, "nodes": [],
             "rect": {"x": 0, "y": 0, "width": size[0], "height": size[1]},
             "app_id": app_id, "window_properties": {"class": cls} if cls else None}
 
@@ -79,6 +79,27 @@ class WindowPidsTest(unittest.TestCase):
 
     def test_no_windows_gives_an_empty_set(self):
         self.assertEqual(self.pids(tree(output(0, [])), {100}), set())
+
+
+class FocusTest(unittest.TestCase):
+    def focused(self, t, pids):
+        return game_view(t, set(pids), set()).focused
+
+    def test_focused_game_window(self):
+        t = tree(output(0, [win(100, focused=True)]))
+        self.assertTrue(self.focused(t, {100}))
+
+    def test_game_not_focused_when_something_else_is(self):
+        t = tree(output(0, [win(100), win(7, focused=True)]))
+        self.assertFalse(self.focused(t, {100}))
+
+    def test_another_apps_focus_does_not_count(self):
+        t = tree(output(0, [win(7, focused=True)]))
+        self.assertFalse(self.focused(t, {100}))
+
+    def test_any_focused_game_window_counts(self):
+        t = tree(output(0, [win(100, size=(1920, 1080)), win(101, size=(100, 100), focused=True)]))
+        self.assertTrue(self.focused(t, {100, 101}))
 
 
 class QueryTest(unittest.TestCase):

@@ -18,6 +18,7 @@ class GameView:
     """What sway knows about a game right now."""
     areas: set[Area] = field(default_factory=set)       # screens showing it
     window_pids: set[int] = field(default_factory=set)  # processes owning its main window(s)
+    focused: bool = False  # one of its windows has the keyboard focus right now
 
 
 def game_view(tree: dict, pids: set[int], app_ids: set[str]) -> GameView:
@@ -39,8 +40,10 @@ def game_view(tree: dict, pids: set[int], app_ids: set[str]) -> GameView:
     classes = {f"steam_app_{a}" for a in app_ids}
     areas: set[Area] = set()
     windows: list[tuple[int, int]] = []  # (area in pixels, pid)
+    focused = False
 
     def walk(node: dict, area: Area | None) -> None:
+        nonlocal focused
         if node.get("type") == "output":
             r = node["rect"]
             area = (r["x"], r["y"], r["width"], r["height"])
@@ -50,6 +53,7 @@ def game_view(tree: dict, pids: set[int], app_ids: set[str]) -> GameView:
         if is_window and (node["pid"] in pids or name in classes):
             r = node["rect"]
             windows.append((r["width"] * r["height"], node["pid"]))
+            focused = focused or bool(node.get("focused"))
             if area and node.get("visible"):
                 areas.add(area)
         for child in node.get("nodes", []) + node.get("floating_nodes", []):
@@ -58,7 +62,7 @@ def game_view(tree: dict, pids: set[int], app_ids: set[str]) -> GameView:
     walk(tree, None)
     biggest = max((a for a, _ in windows), default=0)
     owners = {pid for a, pid in windows if a * 2 >= biggest and pid in pids}
-    return GameView(areas, owners)
+    return GameView(areas, owners, focused)
 
 
 def query_game_view(pids: set[int], app_ids: set[str],
