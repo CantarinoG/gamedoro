@@ -23,7 +23,7 @@ class Settings:
     # Key pressed in the game (if it has focus) just before freezing it, to use
     # the game's own pause. An X keysym name like "Escape"; "" turns it off.
     pause_key: str = "Escape"
-    pause_wait_seconds: float = 1.5  # give the game this long to pause first
+    pause_wait_seconds: float = 4.0  # give the game this long to pause first
 
     def validate(self) -> "Settings":
         if self.play <= 0 or self.block <= 0:

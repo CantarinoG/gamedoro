@@ -30,5 +30,5 @@ pulse_for_seconds = 1
 # that is already paused would be resumed. Not sent if the game isn't focused.
 pause_key = "Escape"
 # How long to wait after the key before freezing, for the game to react.
-pause_wait_seconds = 1.5
+pause_wait_seconds = 4
 

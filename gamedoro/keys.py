@@ -30,7 +30,7 @@ def _load():
 
 
 def press_key(keysym: str, display: str | None = None, libs=None,
-              hold: float = 0.05, sleep=time.sleep) -> bool:
+              hold: float = 0.1, sleep=time.sleep) -> bool:
     """Press and release the key named `keysym` (an X keysym name such as
     "Escape" or "p"). Returns whether it was sent; never raises."""
     try:

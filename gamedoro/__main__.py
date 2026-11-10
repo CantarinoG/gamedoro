@@ -2,9 +2,11 @@
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 from . import config, state, sway
+from .cycle import Cycle
 from .daemon import Daemon
 from .overlay import Overlay
 from .overlay_ui import bindings_available
@@ -27,6 +29,23 @@ def build_overlay(enabled: bool, check=bindings_available):
     return Overlay()
 
 
+def test_pause(settings, delay: float) -> None:
+    """Rehearse the start of a block: focus check, key press, wait. Freezes nothing."""
+    if not settings.pause_key:
+        print("pause_key is empty in your settings, so nothing would be pressed.")
+        return
+    print(f"Switch to the game and click into it. In {delay:g}s I'll press "
+          f"{settings.pause_key!r} if it has focus. (Nothing is frozen.)", flush=True)
+    for left in range(int(delay), 0, -1):
+        print(f"  {left}...", flush=True)
+        time.sleep(1)
+    daemon = Daemon(Cycle(60, 60), locate=sway.query_game_view,
+                    pause_key=settings.pause_key, pause_wait=settings.pause_wait_seconds,
+                    log=print)
+    if daemon.pause_now():
+        print("Done. Did the game show its pause menu? (Press Esc again to close it.)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="gamedoro", description=__doc__)
     ap.add_argument("--config", type=Path, default=config.default_path(), metavar="FILE",
@@ -39,6 +58,10 @@ def main() -> None:
                     metavar="MIN",
                     help="extra play minutes each time a game launches, to cover "
                          "loading (default: 10; 0 disables; capped at play + bonus)")
+    ap.add_argument("--test-pause", nargs="?", const=8.0, type=float, metavar="SECONDS",
+                    help="try the pause-key step on your running game and exit, "
+                         "freezing nothing: wait SECONDS (default 8) for you to "
+                         "focus the game, then press the key")
     ap.add_argument("--no-overlay", dest="overlay", action="store_const", const=False,
                     help="no countdown screen; blocks end by themselves")
     args = ap.parse_args()
@@ -50,6 +73,9 @@ def main() -> None:
         settings = config.resolve(args.config, overrides)
     except config.ConfigError as e:
         ap.error(str(e))
+
+    if args.test_pause is not None:
+        return test_pause(settings, args.test_pause)
 
     overlay = build_overlay(settings.overlay)
 

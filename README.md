@@ -26,7 +26,7 @@ notifications if present.
     pulse_every_seconds = 30  # thaw the frozen game briefly this often (0 = off)
     pulse_for_seconds = 1     # ...for this long   (note: seconds, not minutes)
     pause_key = "Escape"      # pressed in the game just before freezing it ("" = off)
-    pause_wait_seconds = 1.5  # wait this long after the key, then freeze
+    pause_wait_seconds = 4    # wait this long after the key, then freeze
 
 Precedence: built-in defaults < config file < command-line flags
 (`--play`, `--block`, `--launch-bonus`, `--no-overlay`, `--config FILE`).

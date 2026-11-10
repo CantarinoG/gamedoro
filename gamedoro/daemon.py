@@ -2,6 +2,7 @@
 
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -26,11 +27,27 @@ FAST_INTERVAL = 0.5
 WINDOW_GRACE = 15.0
 
 
+_pending: list = []  # notify-send processes we haven't reaped yet
+
+
 def notify(title: str, body: str = "") -> None:
+    """Fire and forget. notify-send can hang for seconds when the notification
+    daemon misbehaves, and nothing here may wait on that."""
+    for proc in _pending[:]:
+        if proc.poll() is not None:
+            _pending.remove(proc)
     try:
-        subprocess.run(["notify-send", "-a", "gamedoro", title, body], timeout=5)
-    except (OSError, subprocess.SubprocessError):
+        _pending.append(subprocess.Popen(
+            ["notify-send", "-a", "gamedoro", title, body],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL))
+    except OSError:
         pass  # notifications are best-effort
+
+
+def log(message: str) -> None:
+    """To stderr, which systemd sends to the journal (journalctl --user -u gamedoro)."""
+    print(f"gamedoro: {message}", file=sys.stderr, flush=True)
 
 
 class Daemon:
@@ -41,7 +58,7 @@ class Daemon:
                  launch_bonus_seconds: float = 0.0,
                  pulse_every: float = 0.0, pulse_for: float = 0.0,
                  sleep=time.sleep, pause_key: str = "", pause_wait: float = 0.0,
-                 press=None):
+                 press=None, log=log):
         """`overlay` is optional; without one, blocks end by themselves.
 
         `locate(pids, app_ids)` returns a sway.GameView (the screens currently
@@ -73,6 +90,7 @@ class Daemon:
         self._since_pulse = 0.0
         self.pause_key, self.pause_wait = pause_key, pause_wait
         self._press = press or self._press_key
+        self._log = log
         self._had_game: bool | None = None  # None until the first look
         self._windowless = 0.0   # seconds a game has had no window yet
         self._fell_back = False  # froze the whole tree while waiting for a window
@@ -93,8 +111,10 @@ class Daemon:
 
         if changed is Phase.BLOCKED:
             self._warned = False
-            self._notify("Time's up!", f"Games frozen for {self.cycle.block_seconds / 60:g} min.")
+            self._log(f"block started ({self.cycle.block_seconds / 60:g} min), "
+                      f"game pids {sorted(pids)}")
             self._pause_game(pids)
+            self._notify("Time's up!", f"Games frozen for {self.cycle.block_seconds / 60:g} min.")
         elif changed is Phase.READY and self._ui_wanted(pids):
             self._notify("Block over", "Press Enter on the overlay to resume.")
 
@@ -167,8 +187,28 @@ class Daemon:
         if not self.pause_key or not pids:
             return
         view = self._view(pids)
-        if view is not None and view.focused and self._press(self.pause_key):
+        if view is None:
+            self._log("pause: sway can't be queried, not pressing a key")
+        elif not view.focused:
+            self._log("pause: game window isn't focused, not pressing a key")
+        elif not self._press(self.pause_key):
+            self._log(f"pause: couldn't send {self.pause_key!r} (no X display or XTEST?)")
+        else:
+            self._log(f"pause: pressed {self.pause_key!r} in the focused game, "
+                      f"waiting {self.pause_wait:g}s before freezing")
             self._sleep(self.pause_wait)
+
+    def pause_now(self) -> bool:
+        """Do just the pause step for whatever game is running, without freezing
+        anything. For `gamedoro --test-pause`. Returns whether a game was found."""
+        groups = self._find()
+        pids = {pid for group in groups.values() for pid in group}
+        self._app_ids = set(groups)
+        if not pids:
+            self._log("pause: no game is running")
+            return False
+        self._pause_game(pids)
+        return True
 
     def _maybe_pulse(self, dt: float) -> None:
         """Briefly let the frozen game run, so no single stall gets long."""
@@ -241,6 +281,7 @@ class Daemon:
     def resume(self) -> None:
         """End a finished block: thaw the games and start a new play cycle."""
         if self.cycle.resume():
+            self._log("resumed: games thawed, new play cycle")
             self.release()
             self._notify("Block over", "Games resumed. Have fun!")
 

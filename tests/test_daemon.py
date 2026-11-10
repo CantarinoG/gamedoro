@@ -33,6 +33,7 @@ class Harness:
         self.pids = {"1": [100, 101]}
         self.frozen, self.thawed, self.notes = [], [], []
         self.events = []  # ordered ("freeze"|"thaw"|"sleep", detail)
+        self.logs = []
         self.daemon = Daemon(
             Cycle(play, block),
             find=lambda: self.pids,
@@ -49,6 +50,7 @@ class Harness:
             pause_key=pause_key,
             pause_wait=pause_wait,
             press=lambda key: (self.events.append(("press", key)), press_ok)[1],
+            log=self.logs.append,
         )
 
 
@@ -473,6 +475,41 @@ class PauseKeyTest(unittest.TestCase):
                     locate=lambda pids, app_ids: GameView(set(), set(pids), True))
         for _ in range(5):
             h.daemon.step(1)
+        self.assertNotIn("press", self.kinds(h))
+
+    def says(self, h, text):
+        return any(text in line for line in h.logs)
+
+    def test_logs_what_it_did_when_it_pressed(self):
+        h = self.harness()
+        h.daemon.step(1)
+        self.assertTrue(self.says(h, "block started"))
+        self.assertTrue(self.says(h, "pressed 'Escape'"))
+        self.assertTrue(self.says(h, "1.5s"))
+
+    def test_logs_why_it_did_not_press(self):
+        h = self.harness(focused=False)
+        h.daemon.step(1)
+        self.assertTrue(self.says(h, "isn't focused"))
+        h = self.harness(view=False)
+        h.daemon.step(1)
+        self.assertTrue(self.says(h, "sway can't be queried"))
+        h = self.harness(press_ok=False)
+        h.daemon.step(1)
+        self.assertTrue(self.says(h, "couldn't send"))
+
+    def test_pause_now_presses_without_freezing(self):
+        h = self.harness()
+        self.assertTrue(h.daemon.pause_now())
+        self.assertIn("press", self.kinds(h))
+        self.assertNotIn("freeze", self.kinds(h))
+        self.assertEqual(h.daemon.cycle.phase, Phase.PLAYING)
+
+    def test_pause_now_with_no_game_says_so(self):
+        h = self.harness()
+        h.pids = {}
+        self.assertFalse(h.daemon.pause_now())
+        self.assertTrue(self.says(h, "no game is running"))
         self.assertNotIn("press", self.kinds(h))
 
     def test_a_reload_changes_the_key(self):
