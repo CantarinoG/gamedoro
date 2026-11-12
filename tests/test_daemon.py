@@ -29,11 +29,12 @@ class FakeOverlay:
 class Harness:
     def __init__(self, play=10, block=5, overlay=None, locate=None, bonus=0.0,
                  pulse_every=0.0, pulse_for=0.0, pause_key="", pause_wait=0.0,
-                 press_ok=True, freeze_games=True):
+                 press_ok=True, freeze_games=True, sound=""):
         self.pids = {"1": [100, 101]}
         self.frozen, self.thawed, self.notes = [], [], []
         self.events = []  # ordered ("freeze"|"thaw"|"sleep", detail)
         self.logs = []
+        self.chimes = []
         self.daemon = Daemon(
             Cycle(play, block),
             find=lambda: self.pids,
@@ -52,6 +53,8 @@ class Harness:
             press=lambda key: (self.events.append(("press", key)), press_ok)[1],
             log=self.logs.append,
             freeze_games=freeze_games,
+            sound=sound,
+            chime=self.chimes.append,
         )
 
 
@@ -93,6 +96,22 @@ class DaemonTest(unittest.TestCase):
         self.assertEqual(h.notes, ["1 minute of play left"])
         h.daemon.step(5)
         self.assertEqual(h.notes, ["1 minute of play left"])  # only once
+
+
+class ChimeTest(unittest.TestCase):
+    def test_sounds_once_when_the_enter_prompt_appears(self):
+        h = Harness(play=1, block=2, overlay=FakeOverlay(), sound="default")
+        h.daemon.step(1)  # -> BLOCKED
+        self.assertEqual(h.chimes, [])  # silent during the block
+        h.daemon.step(2)  # -> READY
+        h.daemon.step(1)  # still waiting for Enter
+        self.assertEqual(h.chimes, ["default"])
+
+    def test_silent_without_an_overlay_to_wait_on(self):
+        h = Harness(play=1, block=2, overlay=None, sound="default")
+        h.daemon.step(1)
+        h.daemon.step(2)
+        self.assertEqual(h.chimes, [])
 
 
 class OverlayTest(unittest.TestCase):

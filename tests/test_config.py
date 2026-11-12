@@ -70,6 +70,13 @@ class ConfigTest(unittest.TestCase):
         self.write('pause_key = ""\n')
         self.assertEqual(resolve(self.path).pause_key, "")
 
+    def test_sound_defaults_to_the_system_sound_and_can_change_or_be_off(self):
+        self.assertEqual(resolve(self.path).sound, "default")
+        self.write('sound = "~/ding.wav"\n')
+        self.assertEqual(resolve(self.path).sound, "~/ding.wav")
+        self.write('sound = ""\n')
+        self.assertEqual(resolve(self.path).sound, "")
+
     def test_pause_key_must_be_a_string(self):
         self.write("pause_key = 27\n")
         with self.assertRaisesRegex(ConfigError, "string"):

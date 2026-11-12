@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from . import freezer, games, keys, state
+from . import sound as sounds
 from .cycle import Cycle, Phase
 from .env import session_env
 
@@ -58,7 +59,8 @@ class Daemon:
                  launch_bonus_seconds: float = 0.0,
                  pulse_every: float = 0.0, pulse_for: float = 0.0,
                  sleep=time.sleep, pause_key: str = "", pause_wait: float = 0.0,
-                 press=None, log=log, freeze_games: bool = True):
+                 press=None, log=log, freeze_games: bool = True,
+                 sound: str = "", chime=sounds.play):
         """`overlay` is optional; without one, blocks end by themselves.
 
         `locate(pids, app_ids)` returns a sway.GameView (the screens currently
@@ -82,6 +84,9 @@ class Daemon:
 
         With `freeze_games` False nothing is ever stopped: a block is just the
         overlay (and the pause key, if set), and the game runs on underneath.
+
+        When a block ends and the overlay waits for Enter, `chime(sound)` is
+        called once so you notice even with your back to the screen.
         """
         self.cycle = cycle
         self.state_path = state_path
@@ -95,6 +100,7 @@ class Daemon:
         self._press = press or self._press_key
         self._log = log
         self.freeze_games = freeze_games
+        self.sound, self._chime = sound, chime
         self._had_game: bool | None = None  # None until the first look
         self._windowless = 0.0   # seconds a game has had no window yet
         self._fell_back = False  # froze the whole tree while waiting for a window
@@ -124,6 +130,7 @@ class Daemon:
                          else f"Take a {minutes} break.")
         elif changed is Phase.READY and self._ui_wanted(pids):
             self._notify("Block over", "Press Enter on the overlay to resume.")
+            self._chime(self.sound)
 
         if (self._overlay is not None and not self._overlay.available
                 and not self._warned_overlay):
@@ -283,6 +290,7 @@ class Daemon:
             self.launch_bonus_seconds = new.launch_bonus * 60
             self.pulse_every, self.pulse_for = new.pulse_every_seconds, new.pulse_for_seconds
             self.pause_key, self.pause_wait = new.pause_key, new.pause_wait_seconds
+            self.sound = new.sound
             self.freeze_games = new.freeze
             if not new.freeze:
                 self._thaw(self._frozen)  # turned off mid-block: let go of the game

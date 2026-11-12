@@ -38,3 +38,6 @@ pause_key = "Escape"
 # How long to wait after the key before freezing, for the game to react.
 pause_wait_seconds = 4
 
+# Sound played once when the block ends and the overlay asks for Enter.
+# "default" = a stock system sound, a path to a sound file, or "" for none.
+sound = "default"

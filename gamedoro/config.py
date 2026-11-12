@@ -27,6 +27,9 @@ class Settings:
     # the game's own pause. An X keysym name like "Escape"; "" turns it off.
     pause_key: str = "Escape"
     pause_wait_seconds: float = 4.0  # give the game this long to pause first
+    # Sound played when a block ends and the overlay asks for Enter: "default"
+    # (a stock system sound), a path to a sound file, or "" for none.
+    sound: str = "default"
 
     def validate(self) -> "Settings":
         if self.play <= 0 or self.block <= 0:
@@ -47,7 +50,7 @@ class Settings:
 FIELDS = {"play": float, "block": float, "launch_bonus": float, "overlay": bool,
           "freeze": bool,
           "pulse_every_seconds": float, "pulse_for_seconds": float,
-          "pause_key": str, "pause_wait_seconds": float}
+          "pause_key": str, "pause_wait_seconds": float, "sound": str}
 # Old names still accepted in the config file. first_bonus used to be a one-off
 # bonus for the first cycle; it now means the same as launch_bonus.
 ALIASES = {"first_bonus": "launch_bonus"}
