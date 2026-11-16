@@ -31,6 +31,26 @@ class FindTest(unittest.TestCase):
             (Path(root) / "self").mkdir()  # non-numeric entries are ignored
             self.assertEqual(find_game_pids(Path(root)), {"620": [4001, 4002]})
 
+    def test_finds_programs_by_executable_name(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.make_proc(root, 5001, b"HOME=/x\0", "AppRun")  # AppImage: generic comm
+            (Path(root) / "5001" / "exe").symlink_to("/tmp/.mount_PCSX2.x/usr/bin/pcsx2-qt")
+            self.make_proc(root, 5002, b"HOME=/x\0", "PCSX2.AppImage")  # runtime, not the emulator
+            self.make_proc(root, 5003, b"SteamAppId=620\0", "portal2")
+            found = find_game_pids(Path(root), programs=["PCSX2-Qt"])
+            self.assertEqual(found, {"program:pcsx2-qt": [5001], "620": [5003]})
+
+    def test_programs_are_ignored_unless_configured(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.make_proc(root, 5001, b"HOME=/x\0", "pcsx2-qt")
+            self.assertEqual(find_game_pids(Path(root)), {})
+
+    def test_matches_on_comm_too(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.make_proc(root, 5001, b"HOME=/x\0", "pcsx2-qt")
+            self.assertEqual(find_game_pids(Path(root), programs=["pcsx2-qt"]),
+                             {"program:pcsx2-qt": [5001]})
+
 
 if __name__ == "__main__":
     unittest.main()

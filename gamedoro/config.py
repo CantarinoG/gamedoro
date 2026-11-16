@@ -30,6 +30,10 @@ class Settings:
     # Sound played when a block ends and the overlay asks for Enter: "default"
     # (a stock system sound), a path to a sound file, or "" for none.
     sound: str = "default"
+    # Non-Steam programs to treat as games (emulators...), by executable name,
+    # e.g. ["pcsx2-qt"]. Matched case-insensitively against the process's
+    # executable and comm.
+    programs: tuple = ()
 
     def validate(self) -> "Settings":
         if self.play <= 0 or self.block <= 0:
@@ -50,7 +54,7 @@ class Settings:
 FIELDS = {"play": float, "block": float, "launch_bonus": float, "overlay": bool,
           "freeze": bool,
           "pulse_every_seconds": float, "pulse_for_seconds": float,
-          "pause_key": str, "pause_wait_seconds": float, "sound": str}
+          "pause_key": str, "pause_wait_seconds": float, "sound": str, "programs": list}
 # Old names still accepted in the config file. first_bonus used to be a one-off
 # bonus for the first cycle; it now means the same as launch_bonus.
 ALIASES = {"first_bonus": "launch_bonus"}
@@ -85,12 +89,14 @@ def read_file(path: Path) -> dict:
             ok = isinstance(value, bool)
         elif kind is str:
             ok = isinstance(value, str)
+        elif kind is list:
+            ok = isinstance(value, list) and all(isinstance(v, str) and v for v in value)
         else:  # numbers: accept ints too, but not bools
             ok = isinstance(value, (int, float)) and not isinstance(value, bool)
         if not ok:
             raise ConfigError(f"{path}: {key} must be a "
-                              f"{ {bool: 'true/false value', str: 'string'}.get(kind, 'number') }")
-        values[key] = kind(value)
+                              f"{ {bool: 'true/false value', str: 'string', list: 'list of names'}.get(kind, 'number') }")
+        values[key] = tuple(value) if kind is list else kind(value)
     return values
 
 

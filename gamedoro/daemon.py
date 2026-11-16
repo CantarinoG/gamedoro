@@ -60,7 +60,7 @@ class Daemon:
                  pulse_every: float = 0.0, pulse_for: float = 0.0,
                  sleep=time.sleep, pause_key: str = "", pause_wait: float = 0.0,
                  press=None, log=log, freeze_games: bool = True,
-                 sound: str = "", chime=sounds.play):
+                 sound: str = "", chime=sounds.play, programs=()):
         """`overlay` is optional; without one, blocks end by themselves.
 
         `locate(pids, app_ids)` returns a sway.GameView (the screens currently
@@ -87,6 +87,9 @@ class Daemon:
 
         When a block ends and the overlay waits for Enter, `chime(sound)` is
         called once so you notice even with your back to the screen.
+
+        Besides Steam games, any process whose executable is named in
+        `programs` (e.g. "pcsx2-qt") counts as a game.
         """
         self.cycle = cycle
         self.state_path = state_path
@@ -101,6 +104,7 @@ class Daemon:
         self._log = log
         self.freeze_games = freeze_games
         self.sound, self._chime = sound, chime
+        self.programs = tuple(programs)
         self._had_game: bool | None = None  # None until the first look
         self._windowless = 0.0   # seconds a game has had no window yet
         self._fell_back = False  # froze the whole tree while waiting for a window
@@ -110,7 +114,7 @@ class Daemon:
         self._app_ids: set[str] = set()
 
     def step(self, dt: float) -> None:
-        groups = self._find()
+        groups = self._find(programs=self.programs)
         pids = {pid for group in groups.values() for pid in group}
         self._app_ids = set(groups)
         launched = self._had_game is False and bool(pids)
@@ -217,7 +221,7 @@ class Daemon:
     def pause_now(self) -> bool:
         """Do just the pause step for whatever game is running, without freezing
         anything. For `gamedoro --test-pause`. Returns whether a game was found."""
-        groups = self._find()
+        groups = self._find(programs=self.programs)
         pids = {pid for group in groups.values() for pid in group}
         self._app_ids = set(groups)
         if not pids:
@@ -291,6 +295,7 @@ class Daemon:
             self.pulse_every, self.pulse_for = new.pulse_every_seconds, new.pulse_for_seconds
             self.pause_key, self.pause_wait = new.pause_key, new.pause_wait_seconds
             self.sound = new.sound
+            self.programs = new.programs
             self.freeze_games = new.freeze
             if not new.freeze:
                 self._thaw(self._frozen)  # turned off mid-block: let go of the game
@@ -328,7 +333,7 @@ class Daemon:
             signal.signal(sig, stop)
         if self.cycle.phase is Phase.PLAYING:
             # A previous run may have died (SIGKILL) mid-block, leaving games frozen.
-            self._thaw({pid for g in self._find().values() for pid in g})
+            self._thaw({pid for g in self._find(programs=self.programs).values() for pid in g})
         last = last_save = last_config = time.monotonic()
         try:
             while True:

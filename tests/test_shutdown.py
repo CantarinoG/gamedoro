@@ -18,7 +18,7 @@ SCRIPT = textwrap.dedent("""
     from gamedoro.daemon import Daemon
     game = subprocess.Popen(["sleep", "60"])
     print(game.pid, flush=True)
-    Daemon(Cycle(1, 60), find=lambda: {{"1": [game.pid]}}, notify=lambda *a: None).run()
+    Daemon(Cycle(1, 60), find=lambda **kw: {{"1": [game.pid]}}, notify=lambda *a: None).run()
 """)
 
 

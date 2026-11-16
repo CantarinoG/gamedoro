@@ -89,7 +89,8 @@ def main() -> None:
            pulse_for=settings.pulse_for_seconds,
            pause_key=settings.pause_key,
            pause_wait=settings.pause_wait_seconds,
-           freeze_games=settings.freeze, sound=settings.sound).run()
+           freeze_games=settings.freeze, sound=settings.sound,
+           programs=settings.programs).run()
 
 
 if __name__ == "__main__":

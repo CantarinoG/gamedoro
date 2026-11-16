@@ -29,6 +29,7 @@ notifications if present.
     pause_key = "Escape"      # pressed in the game just before freezing it ("" = off)
     pause_wait_seconds = 4    # wait this long after the key, then freeze
     sound = "default"         # played when the block ends ("" = off, or a file path)
+    programs = ["pcsx2-qt"]   # non-Steam programs to treat as games, by executable name
 
 Precedence: built-in defaults < config file < command-line flags
 (`--play`, `--block`, `--launch-bonus`, `--no-overlay`, `--config FILE`).
@@ -79,6 +80,11 @@ restart-looping; fix the file and `systemctl --user start gamedoro`.
   sent if sway says the game window is focused, since the key goes to whatever
   has focus. Pause keys toggle, so a game that was **already paused** would be
   resumed by it; set `pause_key = ""` to turn this off. One key for every game.
+- **Non-Steam games (emulators):** list the executable names in `programs`
+  (e.g. `["pcsx2-qt"]` for PCSX2, AppImage included; check yours with
+  `ls -l /proc/<pid>/exe`). They get the same play budget, overlay and launch bonus
+  as Steam games. The AppImage's `comm` is just "AppRun", which is why the
+  executable's name is matched too.
 - **End-of-block sound:** when the block is over and the overlay asks for Enter,
   `sound` is played once (default: the system's alarm sound; set a file path to
   use your own, or `""` for silence). It uses `pw-play`, `paplay` or `ffplay`,

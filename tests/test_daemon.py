@@ -37,7 +37,7 @@ class Harness:
         self.chimes = []
         self.daemon = Daemon(
             Cycle(play, block),
-            find=lambda: self.pids,
+            find=lambda **kw: self.pids,
             freeze=lambda p: (self.frozen.append(set(p)), self.events.append(("freeze", set(p)))),
             thaw=lambda p: (self.thawed.append(set(p)), self.events.append(("thaw", set(p)))),
             notify=lambda title, body="": self.notes.append(title),

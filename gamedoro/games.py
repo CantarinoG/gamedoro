@@ -1,4 +1,5 @@
-"""Find running Steam games by scanning /proc for SteamAppId.
+"""Find running games by scanning /proc: Steam games by SteamAppId, and
+anything else (emulators...) by program name.
 
 Steam sets SteamAppId in the environment of a game's launch chain, and every
 child (Proton, wineserver, the game itself) inherits it. That gives us the
@@ -21,8 +22,25 @@ def parse_app_id(environ: bytes) -> str | None:
     return None
 
 
-def find_game_pids(proc: Path = Path("/proc")) -> dict[str, list[int]]:
-    """Map each running game's app id to the pids in its process tree."""
+def matching_program(entry: Path, programs: set[str]) -> str | None:
+    """The configured program name this process is, by its executable's name
+    (or its comm: AppImages often report a generic comm like "AppRun")."""
+    names = {(entry / "comm").read_text().strip().lower()}
+    try:
+        names.add(Path(os.readlink(entry / "exe")).name.lower())
+    except OSError:
+        pass
+    return next((name for name in sorted(names) if name in programs), None)
+
+
+def find_game_pids(proc: Path = Path("/proc"),
+                   programs=()) -> dict[str, list[int]]:
+    """Map each running game to the pids in its process tree.
+
+    Steam games are keyed by app id. Processes whose executable (or comm) is
+    one of `programs`, e.g. "pcsx2-qt", are keyed "program:<name>".
+    """
+    wanted = {p.lower() for p in programs}
     games: dict[str, list[int]] = {}
     me = os.getpid()
     for entry in proc.iterdir():
@@ -30,11 +48,16 @@ def find_game_pids(proc: Path = Path("/proc")) -> dict[str, list[int]]:
             continue
         try:
             app_id = parse_app_id((entry / "environ").read_bytes())
-            if app_id is None:
-                continue
-            if (entry / "comm").read_text().strip() in IGNORED_COMM:
-                continue
+            if app_id is not None:
+                if (entry / "comm").read_text().strip() in IGNORED_COMM:
+                    continue
+                key = app_id
+            else:
+                program = matching_program(entry, wanted) if wanted else None
+                if program is None:
+                    continue
+                key = f"program:{program}"
         except OSError:
             continue  # process exited, or not ours
-        games.setdefault(app_id, []).append(int(entry.name))
-    return {app_id: sorted(pids) for app_id, pids in games.items()}
+        games.setdefault(key, []).append(int(entry.name))
+    return {key: sorted(pids) for key, pids in games.items()}

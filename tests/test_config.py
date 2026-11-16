@@ -77,6 +77,14 @@ class ConfigTest(unittest.TestCase):
         self.write('sound = ""\n')
         self.assertEqual(resolve(self.path).sound, "")
 
+    def test_programs_is_a_list_of_names(self):
+        self.assertEqual(resolve(self.path).programs, ())
+        self.write('programs = ["pcsx2-qt", "dolphin-emu"]\n')
+        self.assertEqual(resolve(self.path).programs, ("pcsx2-qt", "dolphin-emu"))
+        self.write('programs = "pcsx2-qt"\n')
+        with self.assertRaises(ConfigError):
+            resolve(self.path)
+
     def test_pause_key_must_be_a_string(self):
         self.write("pause_key = 27\n")
         with self.assertRaisesRegex(ConfigError, "string"):
